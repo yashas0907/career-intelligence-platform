@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: career-intelligence
+    runtime: docker
+    dockerfile: deploy/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: EMBEDDING_BACKEND
+        value: auto
+      - key: OPENAI_API_KEY
+        sync: false  # set in dashboard, optional
+      - key: RATE_LIMIT_PER_MINUTE
+        value: 30
+    disk:
+      name: app-data
+      mountPath: /app/backend_data
+      sizeGB: 1

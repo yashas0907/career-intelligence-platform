@@ -1,0 +1,44 @@
+name: Deploy to Hugging Face Spaces (free hosting)
+
+# Auto-deploys the app to your free Hugging Face Space whenever you push to main.
+# One-time setup (see docs/deploy-free.md):
+#   1. Create a Docker Space: https://huggingface.co/new-space -> Docker -> Blank
+#   2. Create a write token:  https://huggingface.co/settings/tokens (role: write)
+#   3. Add repo secrets: HF_TOKEN + HF_SPACE (see docs/deploy-free.md)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: hf-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Validate before deploy
+        env:
+          EMBEDDING_BACKEND: hashing
+          LLM_ENABLED: "false"
+        run: |
+          python -m pip install --quiet -r backend/requirements.txt
+          python -m pytest tests -q
+          cd frontend && npm ci || npm install && npm run build
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ secrets.HF_SPACE }}   # e.g. "your-username/career-intelligence"
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git remote add space "https://$HF_TOKEN@huggingface.co/spaces/$HF_SPACE.git" || true
+          git push space main --force
