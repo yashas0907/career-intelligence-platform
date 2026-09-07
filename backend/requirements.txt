@@ -14,8 +14,7 @@ python-docx>=1.1.0
 
 # AI / ML
 numpy>=1.26
-openai>=1.30          # optional at runtime; required only if OPENAI_API_KEY is set
-sentence-transformers>=2.6  # optional local embeddings
+openai>=1.30          # optional at runtime; required only if OPENAI_API_KEY/GEMINI_API_KEY is set
 scikit-learn>=1.4     # used by hashing fallback tests
 
 # Config

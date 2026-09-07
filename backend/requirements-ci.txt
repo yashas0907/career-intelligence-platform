@@ -1,0 +1,5 @@
+# requirements-ci.txt — minimal deps for CI (tests run in hashing/offline mode).
+# sentence-transformers is deliberately omitted: it drags in torch (~2 GB) and
+# regularly times out or OOMs on free GitHub runners. It remains an optional
+# runtime extra (see requirements.txt note / Dockerfiles install it separately).
+-r requirements.txt

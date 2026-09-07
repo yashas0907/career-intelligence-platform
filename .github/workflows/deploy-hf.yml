@@ -29,7 +29,7 @@ jobs:
           EMBEDDING_BACKEND: hashing
           LLM_ENABLED: "false"
         run: |
-          python -m pip install --quiet -r backend/requirements.txt
+          python -m pip install --quiet -r backend/requirements-ci.txt
           python -m pytest tests -q
           cd frontend && npm ci || npm install && npm run build
 

@@ -89,6 +89,10 @@ No API key needed â€” the app runs in fully offline heuristic mode.
 card) and set `GEMINI_API_KEY` in `.env` (copy from `.env.example`) to enable
 LLM streaming chat, extraction and bullet rewriting at $0 cost.
 
+*Optional:* `pip install sentence-transformers` for free local semantic
+embeddings (not installed by default — it's a large torch download; the
+hashing backend covers offline mode without it).
+
 ## Free deployment
 
 **Hosted free forever on Hugging Face Spaces, auto-deployed from GitHub** â€”
