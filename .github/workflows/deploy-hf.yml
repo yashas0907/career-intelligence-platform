@@ -19,12 +19,24 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Check HF secrets are configured
+        id: hfcheck
+        run: |
+          if [ -z "${{ secrets.HF_TOKEN }}" ] || [ -z "${{ secrets.HF_SPACE }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::HF_TOKEN / HF_SPACE secrets not set — skipping deploy. See docs/deploy-free.md for the one-time setup."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.hfcheck.outputs.skip == 'false'
         with:
           fetch-depth: 0
           lfs: true
 
       - name: Validate before deploy
+        if: steps.hfcheck.outputs.skip == 'false'
         env:
           EMBEDDING_BACKEND: hashing
           LLM_ENABLED: "false"
@@ -34,6 +46,7 @@ jobs:
           cd frontend && npm ci || npm install && npm run build
 
       - name: Push to Hugging Face Space
+        if: steps.hfcheck.outputs.skip == 'false'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE: ${{ secrets.HF_SPACE }}   # e.g. "your-username/career-intelligence"
