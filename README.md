@@ -95,13 +95,17 @@ hashing backend covers offline mode without it).
 
 ## Free deployment
 
-**Hosted free forever on Hugging Face Spaces, auto-deployed from GitHub** â€”
-full step-by-step in [docs/deploy-free.md](docs/deploy-free.md). Summary:
+**Recommended: Render free tier** (750 hrs/mo, deploys straight from GitHub,
+no credit card) — full step-by-step in [docs/deploy-free.md](docs/deploy-free.md):
 
-1. Create a free Docker Space at huggingface.co
-2. Add `HF_TOKEN` + `HF_SPACE` secrets to the GitHub repo
-3. Push to `main` â€” GitHub Action runs the full test suite, then deploys
-4. Live at `https://<you>-career-intelligence.hf.space` (always-on, no cold starts, no expiry)
+1. dashboard.render.com → New → Web Service → pick this repo
+2. Render reads `.render/render.yaml` (Docker, free plan, health check)
+3. Optional: set `GEMINI_API_KEY` (free from aistudio.google.com) for AI mode
+4. Live at `https://career-intelligence-xxxx.onrender.com`
+
+*Note: HF Docker Spaces are PRO-only as of 2026 and Koyeb dropped its free tier —
+Render is the verified free option. See docs/deploy-free.md for details and
+alternatives (Codespaces, local demo).*
 
 ## Quick start (Docker)
 

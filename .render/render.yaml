@@ -2,17 +2,16 @@ services:
   - type: web
     name: career-intelligence
     runtime: docker
-    dockerfile: deploy/Dockerfile
+    dockerfilePath: deploy/render.Dockerfile
     dockerContext: .
+    plan: free                     # 750 hrs/mo, no credit card, sleeps after 15 min idle
     healthCheckPath: /api/health
     envVars:
       - key: EMBEDDING_BACKEND
-        value: auto
-      - key: OPENAI_API_KEY
-        sync: false  # set in dashboard, optional
+        value: hashing             # zero-dependency backend, fits 512 MB RAM
+      - key: GEMINI_API_KEY
+        sync: false                # optional: free key from https://aistudio.google.com/apikey
+      - key: LLM_ENABLED
+        value: "true"
       - key: RATE_LIMIT_PER_MINUTE
-        value: 30
-    disk:
-      name: app-data
-      mountPath: /app/backend_data
-      sizeGB: 1
+        value: "30"
