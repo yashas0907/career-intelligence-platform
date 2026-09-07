@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install dependencies (CI-minimal: no torch/sentence-transformers)
+      - name: Install dependencies (CI-minimal, no torch/sentence-transformers)
         run: |
           cd backend
           pip install -r requirements-ci.txt
