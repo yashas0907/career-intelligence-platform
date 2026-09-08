@@ -1,8 +1,10 @@
 ﻿# AI Career Intelligence Platform
 
-A full-stack, explainable resume â†” job matching system. Upload a resume, paste
+**🔗 LIVE DEMO: https://career-intelligence-platform-8c4h.onrender.com**
+
+A full-stack, explainable resume ↔ job matching system. Upload a resume, paste
 job descriptions, and get a **deterministically computed, fully explained**
-compatibility breakdown â€” skill gaps, transferable skills, ATS-oriented review,
+compatibility breakdown — skill gaps, transferable skills, ATS-oriented review,
 ranked job fit, and a RAG career assistant that cites your own documents.
 
 > The core engineering principle: **an LLM is never asked to produce a number.**
