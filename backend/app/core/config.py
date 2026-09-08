@@ -1,4 +1,4 @@
-"""Centralized application configuration loaded from environment variables."""
+﻿"""Centralized application configuration loaded from environment variables."""
 
 from __future__ import annotations
 
@@ -79,10 +79,10 @@ class Settings:
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "")
-    # FREE option: Google Gemini free tier (https://aistudio.google.com — no card).
+    # FREE option: Google Gemini free tier (https://aistudio.google.com â€” no card).
     # Uses Gemini's OpenAI-compatible endpoint, so the same client works.
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     llm_enabled: bool = _get_bool("LLM_ENABLED", True)  # auto-fallback to heuristic if no key
     llm_timeout_s: int = _get_int("LLM_TIMEOUT_S", 45)
     llm_max_tokens: int = _get_int("LLM_MAX_TOKENS", 1500)

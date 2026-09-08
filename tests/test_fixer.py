@@ -97,6 +97,16 @@ Built a chat app with React
 
 
 class TestGeminiConfig:
+    def test_lenient_json_handles_gemini_quirks(self):
+        """Gemini free tier occasionally returns unquoted keys / trailing commas."""
+        from app.services.ai.llm import extract_json
+
+        assert extract_json('{name: "Aarav", skills: ["python"],}') == {
+            "name": "Aarav",
+            "skills": ["python"],
+        }
+        assert extract_json('```json\n{"ok": true}\n```') == {"ok": True}
+        assert extract_json('prefix text {"mid": 1} suffix') == {"mid": 1}
     def _make(self, openai_key: str, gemini_key: str):
         """Dataclass field defaults are evaluated at import time, so we pass
         keys as constructor arguments instead of touching os.environ."""
@@ -113,6 +123,7 @@ class TestGeminiConfig:
         assert s.llm_provider == "gemini"
         assert s.effective_llm_base_url.startswith("https://generativelanguage.googleapis.com")
         assert s.effective_llm_model == s.gemini_model
+        assert s.effective_llm_model.startswith("gemini-")
         s_on = Settings(openai_api_key="", gemini_api_key="test-key", llm_enabled=True)
         assert s_on.llm_available is True
 
