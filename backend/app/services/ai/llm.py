@@ -31,19 +31,70 @@ class LLMUnavailableError(Exception):
     """Raised when an LLM call is attempted without a configured provider."""
 
 
+class CircuitBreaker:
+    """Trips after N consecutive retryable provider failures; while open, all
+    LLM calls fail fast (no multi-second backoff waits). Half-opens after the
+    cooldown to probe recovery with a single real call."""
+
+    def __init__(self, threshold: int = 3, cooldown_s: int = 600) -> None:
+        self.threshold = threshold
+        self.cooldown_s = cooldown_s
+        self.failures = 0
+        self.opened_at = 0.0
+
+    @property
+    def is_open(self) -> bool:
+        """True when the breaker should block calls. Non-mutating: peeking
+        does not trigger the half-open probe."""
+        if self.failures < self.threshold:
+            return False
+        return (time.time() - self.opened_at) < self.cooldown_s
+
+    def allow_probe(self) -> bool:
+        """Called by chat(): if the cooldown expired, permit exactly one trial
+        call (half-open) and reset the clock."""
+        if self.failures < self.threshold:
+            return True  # circuit closed — normal operation
+        if (time.time() - self.opened_at) >= self.cooldown_s:
+            self.opened_at = time.time()  # start a fresh probe window
+            logger.info("LLM circuit half-open — probing provider")
+            return True
+        return False
+
+    @property
+    def state(self) -> str:
+        if self.failures < self.threshold:
+            return "closed"
+        if (time.time() - self.opened_at) < self.cooldown_s:
+            return "open"
+        return "half-open"
+
+    def record_success(self) -> None:
+        self.failures = 0
+
+    def record_failure(self) -> None:
+        self.failures += 1
+        if self.failures == self.threshold:
+            self.opened_at = time.time()
+            logger.warning("LLM circuit OPEN for %ds after %d consecutive failures", self.cooldown_s, self.failures)
+
+
 class LLMClient:
     """Thin wrapper around the OpenAI-compatible chat completions API.
 
     Works with OpenAI (paid) AND Google Gemini's OpenAI-compatible endpoint
-    (free tier) â€” provider is resolved in config, this client doesn't care.
+    (free tier) — provider is resolved in config, this client doesn't care.
     """
 
     def __init__(self) -> None:
         self._client: Any = None
+        self.breaker = CircuitBreaker(threshold=3, cooldown_s=600)
 
     @property
     def available(self) -> bool:
-        return settings.llm_available
+        """Non-mutating: should callers attempt LLM features at all?
+        False while the circuit is hard-open (recent consecutive failures)."""
+        return settings.llm_available and not self.breaker.is_open
 
     @property
     def provider(self) -> str:
@@ -62,7 +113,8 @@ class LLMClient:
         return self._client
 
     def chat_stream(self, system: str, user: str, *, json_mode: bool = False):
-        """Token-streaming completion. Yields content deltas; raises on failure."""
+        """Token-streaming completion. Yields content deltas; raises on failure.
+        Respects the circuit breaker (fail fast when provider is down)."""
         client = self._ensure_client()
         if len(user) > settings.llm_guard_max_chars:
             user = user[: settings.llm_guard_max_chars]
@@ -80,11 +132,14 @@ class LLMClient:
                 stream=True,
                 **({"response_format": {"type": "json_object"}} if json_mode else {}),
             )
+            self.breaker.record_success()
             for chunk in stream:
                 delta = chunk.choices[0].delta
                 if delta and delta.content:
                     yield delta.content
         except Exception as exc:  # noqa: BLE001
+            if self._is_retryable(exc):
+                self.breaker.record_failure()
             logger.error("LLM stream failed: %s", exc)
             raise
 
@@ -97,9 +152,13 @@ class LLMClient:
 
     def chat(self, system: str, user: str, *, json_mode: bool = False) -> str:
         """Single-turn completion with retry/backoff for transient provider
-        errors (429 rate limits, 503 load spikes). Raises on final failure;
-        callers handle fallback."""
+        errors (429 rate limits, 503 load spikes). A circuit breaker fails fast
+        once the provider is clearly down (e.g. exhausted free-tier quota), so
+        requests never hang on multi-second retry chains. Raises on final
+        failure; callers handle fallback."""
         client = self._ensure_client()
+        if not self.breaker.allow_probe():
+            raise LLMUnavailableError("LLM circuit open — provider recently failed repeatedly.")
         # Truncate user payload defensively (prompt-injection / cost guard)
         if len(user) > settings.llm_guard_max_chars:
             user = user[: settings.llm_guard_max_chars]
@@ -123,14 +182,22 @@ class LLMClient:
                 )
                 content = resp.choices[0].message.content or ""
                 logger.info("LLM call ok: %d chars out", len(content))
+                self.breaker.record_success()
                 return content
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 if self._is_retryable(exc):
+                    # trip counter + fail fast if the breaker just opened
+                    self.breaker.record_failure()
+                    if self.breaker.is_open:
+                        logger.error("LLM circuit open — failing fast: %s", str(exc)[:160])
+                        raise
                     logger.warning("LLM transient error (will retry): %s", str(exc)[:160])
                     continue
                 logger.error("LLM call failed: %s", exc)
                 raise
+        logger.error("LLM call failed after retries: %s", last_exc)
+        raise last_exc  # type: ignore[misc]
         logger.error("LLM call failed after retries: %s", last_exc)
         raise last_exc  # type: ignore[misc]
 

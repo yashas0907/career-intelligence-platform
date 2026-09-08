@@ -96,6 +96,62 @@ Built a chat app with React
         assert client.post("/api/fix/missing").status_code == 404
 
 
+class TestCircuitBreaker:
+    def test_opens_after_consecutive_failures(self):
+        from app.services.ai.llm import CircuitBreaker
+
+        cb = CircuitBreaker(threshold=3, cooldown_s=600)
+        assert not cb.is_open
+        cb.record_failure()
+        cb.record_failure()
+        assert not cb.is_open, "two failures should not trip"
+        cb.record_failure()
+        assert cb.is_open, "third consecutive failure trips the circuit"
+        assert cb.state == "open"
+
+    def test_success_resets(self):
+        from app.services.ai.llm import CircuitBreaker
+
+        cb = CircuitBreaker(threshold=3, cooldown_s=600)
+        cb.record_failure()
+        cb.record_failure()
+        cb.record_success()
+        cb.record_failure()
+        assert not cb.is_open, "success resets the count"
+
+    def test_half_open_after_cooldown(self):
+        from app.services.ai.llm import CircuitBreaker
+
+        cb = CircuitBreaker(threshold=3, cooldown_s=60)
+        cb.record_failure()
+        cb.record_failure()
+        cb.record_failure()
+        assert cb.state == "open", "freshly tripped breaker is open"
+        assert not cb.allow_probe(), "calls blocked while open"
+
+        # simulate cooldown elapsed by rewinding the clock
+        cb.opened_at -= 61
+        assert cb.state == "half-open"
+        assert cb.allow_probe(), "probe allowed after cooldown"
+        # probe window restarts: next immediate check blocks again until result
+        assert not cb.allow_probe(), "only one probe per window"
+
+        # successful probe closes the circuit
+        cb.record_success()
+        assert cb.state == "closed"
+
+    def test_fail_fast_prevents_retry_chains(self):
+        """With the breaker open, available must be False so callers skip the
+        LLM entirely instead of waiting through 2s+5s retries."""
+        from app.services.ai.llm import CircuitBreaker, LLMClient
+
+        client = LLMClient()
+        for _ in range(3):
+            client.breaker.record_failure()
+        assert client.breaker.is_open
+        assert client.available is False  # callers check this before calling
+
+
 class TestGeminiConfig:
     def test_lenient_json_handles_gemini_quirks(self):
         """Gemini free tier occasionally returns unquoted keys / trailing commas."""

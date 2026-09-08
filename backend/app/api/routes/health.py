@@ -35,11 +35,16 @@ def health() -> HealthResponse:
     except Exception as exc:  # noqa: BLE001
         logger.error("Embedding backend check failed: %s", exc)
 
+    from app.services.ai.llm import llm
+
+    llm_state = "none" if not settings.llm_available else llm.breaker.state
+
     return HealthResponse(
         status="ok" if db_ok else "degraded",
         version="1.0.0",
-        llm_available=settings.llm_available,
+        llm_available=settings.llm_available and llm_state != "open",
         llm_provider=settings.llm_provider,
+        llm_state=llm_state,
         embedding_backend=backend_name,
         database=settings.database_url.split("://")[0] + ("://…" if db_ok else " (unreachable)"),
     )

@@ -120,5 +120,6 @@ class HealthResponse(BaseModel):
     version: str
     llm_available: bool
     llm_provider: str = "none"
+    llm_state: str = "none"  # closed | open | half-open | none
     embedding_backend: str
     database: str
