@@ -25,13 +25,10 @@ This project demonstrates an actual AI/ML **system**:
 - a multi-signal, weighted scoring engine with published methodology
 - embedding-backed semantic similarity with a pluggable backend chain
 - a grounded RAG assistant with citations and an extractive offline fallback
-- a relational database, typed API, structured logging, Docker, and 135 tests
+- a relational database, typed API, structured logging, Docker, and 140 tests
 
-It was inspired by the patterns in [KalyanMurapaka45/DocGenius](https://github.com/KalyanMurapaka45/DocGenius-Revolutionizing-PDFs-with-AI)
-(PDF + chunking + embeddings + LLM Q&A) and the chatbot projects in the
-[AI-Project-Gallery](https://github.com/KalyanM45/AI-Project-Gallery) reference
-repository â€” then substantially redesigned around explainability and
-deterministic scoring rather than a single LLM call.
+Every component was designed and built from scratch around one core principle:
+**explainability and deterministic scoring over a single opaque LLM call.**
 
 ## Features
 
