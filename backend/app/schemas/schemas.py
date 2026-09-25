@@ -68,6 +68,7 @@ class AnalysisResponse(BaseModel):
     overall_score: float
     breakdown: dict[str, float]
     weights: dict[str, float]
+    weights_redistributed: bool = False
     components: dict[str, Any]
     skill_comparison: dict[str, Any]
     ats: dict[str, Any]

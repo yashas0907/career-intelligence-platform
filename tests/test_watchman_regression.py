@@ -181,3 +181,32 @@ class TestStopwordFiltering:
         toks = _tokens("I am at it on of to a")
         assert toks == [], "single-char and stopword tokens must all be filtered"
 
+
+
+class TestWatchmanAPI:
+    """The user's exact scenario through the real API."""
+
+    def test_watchman_low_through_api(self, client, sample_texts):
+        up = client.post(
+            "/api/resume/upload",
+            files={"file": ("r.txt", sample_texts["resume"].encode(), "text/plain")},
+        ).json()
+        r = client.post(
+            "/api/jobs/analyze",
+            json={
+                "resume_id": up["resume_id"],
+                "jobs": [
+                    {"title": "watchman", "description": WATCHMAN_JD},
+                    {"title": "ml", "description": ML_JD},
+                ],
+            },
+        )
+        assert r.status_code == 200
+        results = r.json()
+        w = next(x for x in results if x["job_title"] == "watchman")
+        m = next(x for x in results if x["job_title"] == "ml")
+        assert w["overall_score"] < 0.40, f"watchman {w['overall_score']:.0%} through API"
+        assert m["overall_score"] > w["overall_score"]
+        assert w["weights_redistributed"] is True
+        assert m["weights_redistributed"] is False
+        assert "No recognizable skill requirements" in w["explanation"]
