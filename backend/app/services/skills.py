@@ -145,7 +145,7 @@ _RAW: list[SkillMeta] = [
     SkillMeta("fintech", "FinTech", "domain", ("finance", "financial services", "fintech", "banking"), ()),
     SkillMeta("healthcare", "Healthcare / Medical", "domain", ("healthcare", "medical", "clinical", "health care", "biotech"), ()),
     SkillMeta("ecommerce", "E-commerce", "domain", ("e-commerce", "ecommerce", "retail", "online marketplace"), ()),
-    SkillMeta("cybersecurity", "Cybersecurity", "domain", ("security", "infosec", "information security", "penetration testing"), ()),
+    SkillMeta("cybersecurity", "Cybersecurity", "domain", ("infosec", "information security", "penetration testing", "cyber security"), ()),
 
     # --- Soft skills ---
     SkillMeta("communication", "Communication", "soft", ("communication skills", "verbal communication", "written communication", "presentation skills", "public speaking"), ()),

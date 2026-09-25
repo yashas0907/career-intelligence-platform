@@ -84,9 +84,21 @@ class STEmbeddings(EmbeddingBackend):
 
 _TOKEN_RE = re.compile(r"[a-z0-9#+.]+")
 
+# Common English function words carry no domain signal but dominate bag-of-words
+# cosine on short documents — filtering them is what makes the hashing backend's
+# similarity meaningfully separate related from unrelated document pairs
+# (calibrated: see docs/scoring.md).
+STOPWORDS = frozenset(
+    """the a an and or of to in for with on at by is are was were be been being am this that these
+    those it its as from will would should could can may might must have has had do does did not
+    no but if then than so such we our you your they their them he she his her i me my us also
+    there here when where which who whom what why how all any both each few more most other some
+    only own same very just don now up out about into over after under again further once""".split()
+)
+
 
 def _tokens(text: str) -> list[str]:
-    return _TOKEN_RE.findall(text.lower())
+    return [t for t in _TOKEN_RE.findall(text.lower()) if t not in STOPWORDS and len(t) > 1]
 
 
 def _bigrams(tokens: list[str]) -> list[str]:
@@ -101,8 +113,8 @@ class HashingEmbeddings(EmbeddingBackend):
     graceful-degradation path. We label it clearly so we never over-claim.
     """
 
-    def __init__(self, dim: int = 512) -> None:
-        self.name = "hashing:512"
+    def __init__(self, dim: int = 768) -> None:
+        self.name = "hashing:768"
         self.dim = dim
 
     def embed(self, texts: list[str]) -> np.ndarray:
@@ -158,8 +170,14 @@ def cosine_matrix(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 
 def semantic_similarity(text_a: str, text_b: str) -> float:
-    """Cosine similarity in [0, 1] (clamped from [-1, 1])."""
+    """Raw cosine similarity clamped to [0, 1].
+
+    Note: deliberately NOT remapped via (cos+1)/2 — that normalization is for
+    embeddings that can go negative; the hashing backend produces non-negative
+    vectors where it would silently inflate 0.21 to 0.61. All calibration
+    anchors in docs/scoring.md are on this raw scale.
+    """
     backend = get_backend()
     vecs = backend.embed([text_a, text_b])
     sim = float(cosine_matrix(vecs[:1], vecs[1:])[0, 0])
-    return max(0.0, min(1.0, (sim + 1) / 2))
+    return max(0.0, min(1.0, sim))

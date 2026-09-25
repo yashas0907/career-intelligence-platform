@@ -32,6 +32,14 @@ def deterministic_explanation(result: dict[str, Any], job_title: str) -> str:
     comps = result["components"]
     skills = comps["skills"]
 
+    # sparse-JD note: explain WHY the usual skill evidence is absent
+    if not skills.get("informative", True):
+        lines.append(f"  ! {skills.get('note', 'No recognizable skill requirements in this job description.')}")
+        lines.append("  ! Score is based on overall relevance (semantic + projects), not skill overlap.")
+
+    if result.get("weights_redistributed"):
+        lines.append("  ! Weight redistributed: components with no real signal gave their weight to semantic/project relevance.")
+
     for d in skills.get("strong", [])[:6]:
         mark = "✓" if d["requirement"] == "required" else "+"
         lines.append(f"  {mark} {d['display']} appears in resume" + (f" — {d['evidence'][0][:90]}" if d.get("evidence") else ""))
@@ -63,7 +71,9 @@ def deterministic_explanation(result: dict[str, Any], job_title: str) -> str:
     for key, label in _COMPONENT_LABELS.items():
         val = result["breakdown"][key]
         w = result["weights"][key]
-        lines.append(f"  {label:<20} {val:.0%}  (weight {w:.0%})")
+        informative = comps[key].get("informative", True)
+        marker = "" if informative else "  (no signal — neutral)"
+        lines.append(f"  {label:<20} {val:.0%}  (weight {w:.0%}){marker}")
 
     return "\n".join(lines)
 

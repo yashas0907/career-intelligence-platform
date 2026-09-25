@@ -1,4 +1,4 @@
-"""RAG career assistant.
+﻿"""RAG career assistant.
 
 Retrieval: embed the question, cosine-search the resume + JD chunk index, take
 top-k with source labels. Generation: LLM answers with ONLY retrieved chunks +
@@ -42,10 +42,10 @@ def _extractive_fallback(question: str, chunks: list[tuple[Any, float]], analysi
     """Grounded fallback when no LLM: quote the best evidence directly."""
     if not chunks:
         return "I couldn't find relevant information in your uploaded documents to answer that."
-    lines = [f"Based on your documents, here is the most relevant evidence for “{question}”:", ""]
+    lines = [f"Based on your documents, here is the most relevant evidence for â€œ{question}â€:", ""]
     for c, sim in chunks[:3]:
-        snippet = c.text if len(c.text) < 320 else c.text[:317] + "…"
-        lines.append(f"• From {c.source} ({c.label}): “{snippet}”")
+        snippet = c.text if len(c.text) < 320 else c.text[:317] + "â€¦"
+        lines.append(f"â€¢ From {c.source} ({c.label}): â€œ{snippet}â€")
     if analysis_summary:
         lines.append("")
         lines.append(f"Computed analysis: {analysis_summary}")
@@ -71,7 +71,7 @@ def answer_question(
     # compact computed-analysis context
     analysis_summary = ""
     if analysis:
-        bd = analysis.get("breakdown", {})
+        bd = {k: v for k, v in analysis.get("breakdown", {}).items() if isinstance(v, (int, float))}
         skills = analysis.get("skill_comparison", {})
         analysis_summary = (
             f"Overall {analysis.get('overall_score', 0):.0%}; "
@@ -126,7 +126,7 @@ def answer_question_stream(
     context = _format_chunks(chunks)
     analysis_summary = ""
     if analysis:
-        bd = analysis.get("breakdown", {})
+        bd = {k: v for k, v in analysis.get("breakdown", {}).items() if isinstance(v, (int, float))}
         skills = analysis.get("skill_comparison", {})
         analysis_summary = (
             f"Overall {analysis.get('overall_score', 0):.0%}; "
@@ -160,3 +160,4 @@ def answer_question_stream(
         yield {"type": "answer", "text": " ".join(words[i : i + batch_size]) + " "}
         _time.sleep(delay_s)
     yield {"type": "done", "method": "rag+extractive"}
+

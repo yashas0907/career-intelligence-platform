@@ -52,6 +52,8 @@ def run_match(db: Session, resume: Resume, job: Job) -> Analysis:
         breakdown={
             "overall": result["overall_score"],
             **result["breakdown"],
+            "weights": result["weights"],
+            "weights_redistributed": result.get("weights_redistributed", False),
         },
         skill_comparison=result["components"]["skills"],
         ats=ats,
@@ -74,14 +76,20 @@ def run_match(db: Session, resume: Resume, job: Job) -> Analysis:
 
 
 def analysis_to_dict(a: Analysis, job: Job) -> dict[str, Any]:
+    stored_weights = a.breakdown.get("weights") if isinstance(a.breakdown, dict) else None
     return {
         "analysis_id": a.id,
         "resume_id": a.resume_id,
         "job_id": a.job_id,
         "job_title": job.title or "Role",
         "overall_score": a.overall_score,
-        "breakdown": {k: v for k, v in a.breakdown.items() if k != "overall"},
-        "weights": {"skills": 0.35, "experience": 0.20, "projects": 0.15, "education": 0.10, "semantic": 0.20},
+        "breakdown": {
+            k: v
+            for k, v in a.breakdown.items()
+            if k not in {"overall", "weights", "weights_redistributed"}
+        },
+        "weights": stored_weights or {"skills": 0.35, "experience": 0.20, "projects": 0.15, "education": 0.10, "semantic": 0.20},
+        "weights_redistributed": a.breakdown.get("weights_redistributed", False) if isinstance(a.breakdown, dict) else False,
         "components": {
             "skills": a.skill_comparison,
             "experience": _experience_component(a.breakdown),
@@ -147,7 +155,11 @@ def rank_jobs_for_resume(db: Session, resume_id: str) -> list[dict]:
                 "job_title": job.title,
                 "overall_score": a.overall_score,
                 "components": {"skills": a.skill_comparison},
-                "breakdown": {k: v for k, v in a.breakdown.items() if k != "overall"},
+                "breakdown": {
+                    k: v
+                    for k, v in a.breakdown.items()
+                    if k not in {"overall", "weights", "weights_redistributed"}
+                },
             }
         )
     return rank_jobs(items)

@@ -508,14 +508,21 @@ def extract_job_deterministic(jd_text: str) -> dict[str, Any]:
     # Skills are bucketed ONLY from requirement bullets (explicit requirements).
     # Skills appearing only in prose ("about the role" etc.) are NOT marked as
     # required — that would inflate gaps. The hybrid LLM pass may still add them.
+    # SOFT skills (communication, teamwork...) are excluded entirely: they are
+    # boilerplate in ~90% of job postings, add no signal, and would let a
+    # resume listing "communication" earn a skills score off an unrelated JD.
     req_skills: set[str] = set()
     pref_skills: set[str] = set()
     if required_lines:
         req_text = " ".join(required_lines)
-        req_skills = set(normalizer.extract(req_text).keys())
+        req_skills = {
+            s for s in normalizer.extract(req_text).keys() if skill_category(s) != "soft"
+        }
     if preferred_lines:
         pref_text = " ".join(preferred_lines)
-        pref_skills = set(normalizer.extract(pref_text).keys())
+        pref_skills = {
+            s for s in normalizer.extract(pref_text).keys() if skill_category(s) != "soft"
+        }
 
     education_req = []
     for kw in ("bachelor", "b.tech", "btech", "b.e", "bsc", "b.sc", "master", "m.tech", "mtech", "msc", "phd", "mba", "degree"):
@@ -525,6 +532,16 @@ def extract_job_deterministic(jd_text: str) -> dict[str, Any]:
     responsibilities = [
         b for b in required_lines if re.search(r"(build|design|develop|maintain|work|collaborate|analyz|research|deploy|create|implement|write|optimize)", b, re.IGNORECASE)
     ][:8]
+
+    # Dedicated "Responsibilities:" section bullets also count as responsibilities —
+    # real JDs list them separately from Requirements, and they're the strongest
+    # experience-relevance signal for the scoring engine.
+    resp_section = re.search(
+        r"responsibilities?:?\s*\n((?:\s*[-\u2022\u00b7*].*\n?)+)", jd_text, re.IGNORECASE
+    )
+    if resp_section:
+        resp_bullets = [b.strip(" -\u2022\u00b7*") for b in resp_section.group(1).splitlines() if b.strip()]
+        responsibilities = list(dict.fromkeys(responsibilities + resp_bullets))[:8]
 
     return {
         "title": title,
@@ -568,10 +585,17 @@ def extract_job(jd_text: str) -> dict[str, Any]:
     else:
         parsed["_extraction_method"] = "heuristic"
 
-    # Always re-run taxonomy normalization on final skill lists
-    parsed["required_skills"] = list(
-        dict.fromkeys(s if s in SKILL_IDS else normalize_skill_or_keep(s) for s in parsed.get("required_skills", []))
-    )
+    # Always re-run taxonomy normalization on final skill lists, and drop soft
+    # skills from requirements (JD boilerplate — see extract_job_deterministic).
+    parsed["required_skills"] = [
+        s
+        for s in dict.fromkeys(
+            s if s in SKILL_IDS else normalize_skill_or_keep(s) for s in parsed.get("required_skills", [])
+        )
+        if skill_category(s) != "soft"
+    ]
     pref = parsed.get("preferred_skills", [])
-    parsed["preferred_skills"] = [s for s in dict.fromkeys(pref) if s not in parsed["required_skills"]]
+    parsed["preferred_skills"] = [
+        s for s in dict.fromkeys(pref) if s not in parsed["required_skills"] and skill_category(s) != "soft"
+    ]
     return parsed
