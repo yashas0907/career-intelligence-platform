@@ -42,6 +42,13 @@ export function BreakdownList({ analysis }: { analysis: MatchAnalysis }) {
   ]
   return (
     <div>
+      {analysis.weights_redistributed && (
+        <div className="warn-box" style={{ margin: '0 0 12px', fontSize: '.78rem' }}>
+          ⚖ This job description has few recognizable requirements — weights were
+          adapted to score on real signals only (relevance & projects), so the
+          number reflects actual fit instead of neutral filler.
+        </div>
+      )}
       {rows.map(([label, key, val]) => (
         <div className="score-row" key={key}>
           <span className="lbl">{label}</span>

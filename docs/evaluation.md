@@ -1,15 +1,15 @@
-# Evaluation Methodology
+﻿# Evaluation Methodology
 
 ## What is evaluated, and how
 
-### 1. Deterministic components → classic unit tests
+### 1. Deterministic components â†’ classic unit tests
 
 Scoring, normalization, parsing, and ATS checks are pure functions, so they are
-verified with exact assertions in the test suite (109 tests):
+verified with exact assertions in the test suite (152 tests):
 
-- **Scoring**: weights sum to 1; required-skills 3× weighting formula is verified
-  numerically; monotonicity (better candidate ⇒ higher score); determinism
-  (same input ⇒ byte-identical output); transferable credit strictly in (0,1).
+- **Scoring**: weights sum to 1; required-skills 3Ã— weighting formula is verified
+  numerically; monotonicity (better candidate â‡’ higher score); determinism
+  (same input â‡’ byte-identical output); transferable credit strictly in (0,1).
 - **Skill normalization**: every taxonomy alias maps to its canonical id;
   no false boundary matches (`pythonic` must NOT count as `python`); case
   insensitivity; dedup to one canonical id.
@@ -17,7 +17,7 @@ verified with exact assertions in the test suite (109 tests):
   corrupted/fake/empty/oversized/unsupported files are rejected with clear errors.
 - **Extraction**: contacts, sections, education, experience bullets, projects,
   years-of-experience (explicit "3+ years" and date-range derivation).
-- **API**: full user journey (upload → analyze → retrieve → rank → chat),
+- **API**: full user journey (upload â†’ analyze â†’ retrieve â†’ rank â†’ chat),
   plus 404s, 422s, and consistent error envelopes.
 
 ### 2. Extraction accuracy (labeled corpus, measured)
@@ -37,7 +37,7 @@ Measured macro-averages (heuristic pipeline, no LLM, 2026-09):
 | Experience titles | 1.00 | 1.00 | 1.00 |
 | Education degrees | 1.00 | 1.00 | 1.00 |
 
-Scope caveats (honest): 3 resumes is a *small* corpus — these numbers say the
+Scope caveats (honest): 3 resumes is a *small* corpus â€” these numbers say the
 pipeline works on conventional layouts, not that it generalizes to every resume
 style. Extending the corpus is the single highest-value evaluation improvement
 (see below).
@@ -45,10 +45,10 @@ style. Extending the corpus is the single highest-value evaluation improvement
 ### 3. Skill normalization quality
 
 The taxonomy covers ~100 canonical tech skills with ~250 aliases, including the
-classic confusables: `sklearn→scikit-learn`, `k8s→kubernetes`, `golang→go`,
-`js→javascript`, `TF→tensorflow`, `HF transformers→huggingface`. Tests pin each
+classic confusables: `sklearnâ†’scikit-learn`, `k8sâ†’kubernetes`, `golangâ†’go`,
+`jsâ†’javascript`, `TFâ†’tensorflow`, `HF transformersâ†’huggingface`. Tests pin each
 mapping. Equivalence handling (`Python` vs `python` vs `py`) is by construction,
-not string matching — the reference project's weakness (naive matching) is
+not string matching â€” the reference project's weakness (naive matching) is
 specifically addressed here.
 
 ### 4. Matching quality
@@ -60,20 +60,20 @@ Verifiable properties instead of unverifiable accuracy claims:
 - **Relative correctness**: an ML resume must score higher against an ML JD than
   a backend JD (the API test asserts exactly this ordering).
 - **Explainability**: every skill decision, every sub-score, and every
-  recommendation carries evidence strings — tested to be non-empty.
+  recommendation carries evidence strings â€” tested to be non-empty.
 
 ### 5. Retrieval quality (RAG)
 
 - Chunking: paragraph-aware, hard-split for giant paragraphs; ids unique (tested).
 - Retrieval: a query semantically matching one chunk retrieves that chunk first
-  (tested with the hashing backend — deterministic in CI).
+  (tested with the hashing backend â€” deterministic in CI).
 - Grounding: every answer ships with source labels + similarity scores; the
   extractive fallback only ever quotes retrieved text.
 
 ### 6. Hallucination resistance
 
-- Scores cannot be hallucinated — they're computed, not generated.
-- LLM extraction output is validated field-by-field and only *merged* — the
+- Scores cannot be hallucinated â€” they're computed, not generated.
+- LLM extraction output is validated field-by-field and only *merged* â€” the
   heuristic result remains the base, so the LLM can only add, not corrupt.
 - The assistant's system prompt forbids non-context answers; when no LLM is
   configured the fallback cannot generate novel claims at all (it quotes).
@@ -89,19 +89,20 @@ Verifiable properties instead of unverifiable accuracy claims:
 3. **Semantic fallback**: the hashing backend is lexical, not truly semantic.
    For real semantic scoring configure OpenAI embeddings or install
    sentence-transformers. Backend is always reported in `/api/health` and the UI.
-4. **Years of experience** is derived from date ranges and explicit statements —
+4. **Years of experience** is derived from date ranges and explicit statements â€”
    internships, gaps, and "Present" are approximated.
 5. **ATS analysis** uses publicly-known parsing signals; it does not claim to
    replicate any proprietary system (stated in the UI and API response).
-6. **Job ranking** ranks provided JDs only — it is not a job-search engine.
+6. **Job ranking** ranks provided JDs only â€” it is not a job-search engine.
 7. **Evaluation scale**: fixtures are small; production-grade claims would need
    annotated corpora and human-in-the-loop review.
 
 ## Extending evaluation
 
-- Grow `tests/fixtures/eval_corpus.py` to 50–100 annotated resumes (it's plain
-  data — add entries and the report + CI thresholds update automatically).
+- Grow `tests/fixtures/eval_corpus.py` to 50â€“100 annotated resumes (it's plain
+  data â€” add entries and the report + CI thresholds update automatically).
 - LLM-judge experiments for RAG answer faithfulness (judge sees only retrieved
-  chunks + the answer, scores support 0–1) — cheap, automatable, honest.
+  chunks + the answer, scores support 0â€“1) â€” cheap, automatable, honest.
 - Property-based testing (hypothesis) for the scoring engine: random profiles,
   assert invariants (bounds, monotonicity in added skills).
+

@@ -60,6 +60,7 @@ export interface MatchAnalysis {
     semantic: number
   }
   weights: Record<string, number>
+  weights_redistributed?: boolean
   components: {
     skills: SkillComparison
     experience: ComponentScore
