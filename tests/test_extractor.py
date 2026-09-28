@@ -115,3 +115,36 @@ class TestExperienceYears:
 
     def test_no_dates(self):
         assert total_years_experience("no dates here") is None
+
+    def test_education_dates_never_count_as_experience(self):
+        """Regression: a student's 'B.Tech 2023 - 2027' must not inflate
+        experience to 4 years. Only the experience section counts."""
+        resume = """Ananya Rao
+ananya@x.com
+
+EDUCATION
+B.Tech Computer Science
+2023 - 2027
+
+EXPERIENCE
+ML Intern | TraceAI
+June 2025 - August 2025
+- Built models
+"""
+        p = extract_resume(resume)
+        # internship is ~0 yrs (same year); education range must NOT count
+        assert p["total_years_experience"] in (None, 0.0), (
+            f"education dates counted as experience: {p['total_years_experience']}"
+        )
+
+    def test_multi_year_experience_still_counts(self):
+        resume = """Rohan M
+rohan@x.com
+
+EXPERIENCE
+Software Engineer | PayU
+2022 - 2024
+- Built APIs
+"""
+        p = extract_resume(resume)
+        assert p["total_years_experience"] == 2.0

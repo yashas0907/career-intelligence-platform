@@ -101,7 +101,13 @@ export default function App() {
     }
   }
 
-  const startFresh = () => {
+  const startFresh = async () => {
+    // privacy: also delete the uploaded resume server-side (cascades everything)
+    if (store.resume) {
+      try {
+        await api.deleteResume(store.resume.resume_id)
+      } catch { /* already gone */ }
+    }
     clearSession()
     sess.current = { resumeId: null, activeAnalysisId: null, analysisIds: [] }
     setStore(emptyStore)
@@ -153,7 +159,7 @@ export default function App() {
               </button>
             ))}
             {hasData && (
-              <button className="nav-btn" onClick={startFresh} title="Clear session and start over">↺ New</button>
+              <button className="nav-btn" onClick={() => void startFresh()} title="Delete resume and all analyses, start over">↺ New</button>
             )}
           </nav>
         </div>

@@ -25,7 +25,7 @@ This project demonstrates an actual AI/ML **system**:
 - a multi-signal, weighted scoring engine with published methodology
 - embedding-backed semantic similarity with a pluggable backend chain
 - a grounded RAG assistant with citations and an extractive offline fallback
-- a relational database, typed API, structured logging, Docker, and 152 tests
+- a relational database, typed API, structured logging, Docker, and 156 tests
 
 Every component was designed and built from scratch around one core principle:
 **explainability and deterministic scoring over a single opaque LLM call.**
@@ -121,6 +121,7 @@ GET  /api/health                 liveness + backend capabilities
 POST /api/resume/upload          multipart file â†’ structured profile
 GET  /api/resume/{id}            stored profile
 GET  /api/resume/{id}/history    past analyses for the resume
+DELETE /api/resume/{id}          delete resume + all linked data (privacy)
 POST /api/jobs/analyze           {resume_id, jobs[]} â†’ full analyses (â‰¤10 jobs)
 POST /api/jobs/analyze/stream    SSE: each analysis emitted the moment it's ready
 POST /api/match                  single-job convenience alias
@@ -158,11 +159,11 @@ See [.env.example](.env.example) â€” highlights:
 
 ```bash
 pip install -r backend/requirements.txt
-python -m pytest tests -v              # 152 tests
+python -m pytest tests -v              # 156 tests
 python tests/eval_extraction.py        # labeled-corpus P/R/F1 report
 ```
 
-- **152 tests**: scoring methodology contract, skill normalization, parsing (real
+- **156 tests**: scoring methodology contract, skill normalization, parsing (real
   generated PDF/DOCX bytes, malformed files), extraction, ATS, ranking, RAG
   retrieval, API lifecycle + edge cases, embedding stability, SSE streaming
   (chat + analysis), demo seeding, rate limiting.
@@ -208,4 +209,6 @@ Summarized from [docs/evaluation.md](docs/evaluation.md):
 ## License
 
 MIT â€” see [LICENSE](LICENSE).
+
+
 

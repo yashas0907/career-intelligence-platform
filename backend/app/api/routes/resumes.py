@@ -78,6 +78,30 @@ def get_resume(resume_id: str, db: Session = Depends(get_db)) -> ResumeProfileRe
     )
 
 
+@router.delete("/{resume_id}")
+def delete_resume(resume_id: str, db: Session = Depends(get_db)) -> dict:
+    """Delete a resume and everything linked to it (jobs, analyses, chat,
+    vector index). Privacy feature: uploaded resumes must be removable."""
+    resume = db.get(Resume, resume_id)
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found.")
+
+    # clean the persisted vector index for this namespace
+    try:
+        from app.services.ai.vector_store import VectorStore
+
+        store_dir = VectorStore(namespace=resume_id)
+        store_dir._meta_path.unlink(missing_ok=True)
+        store_dir._vec_path.unlink(missing_ok=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Vector store cleanup failed for %s: %s", resume_id, exc)
+
+    db.delete(resume)  # cascades to jobs, analyses, chat messages
+    db.commit()
+    logger.info("Resume deleted id=%s (cascade)", resume_id)
+    return {"deleted": True, "resume_id": resume_id}
+
+
 @router.get("/{resume_id}/history")
 def resume_history(resume_id: str, db: Session = Depends(get_db)) -> dict:
     resume = db.get(Resume, resume_id)

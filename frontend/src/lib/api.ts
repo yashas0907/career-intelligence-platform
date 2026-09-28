@@ -160,6 +160,9 @@ export const api = {
 
   fixDownloadUrl: (resumeId: string, format: 'txt' | 'docx', jobId?: string | null) =>
     `${BASE}/fix/${resumeId}/download?format=${format}${jobId ? `&job_id=${jobId}` : ''}`,
+
+  deleteResume: (resumeId: string) =>
+    request<{ deleted: boolean; resume_id: string }>(`/resume/${resumeId}`, { method: 'DELETE' }),
 }
 
 export function fmtPct(v: number | undefined | null): string {

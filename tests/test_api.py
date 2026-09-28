@@ -225,6 +225,33 @@ class TestHistory:
         assert len(r.json()["analyses"]) == 1
 
 
+class TestResumeDeletion:
+    def test_delete_cascades_everything(self, client, sample_texts):
+        up = client.post(
+            "/api/resume/upload",
+            files={"file": ("r.txt", sample_texts["resume"].encode(), "text/plain")},
+        ).json()
+        rid = up["resume_id"]
+        # create analysis + chat so the cascade is exercised
+        match = client.post(
+            "/api/match", json={"resume_id": rid, "jobs": [{"description": sample_texts["jd_ml"]}]}
+        ).json()
+        client.post("/api/chat", json={"analysis_id": match["analysis_id"], "question": "Which projects matter?"})
+
+        r = client.delete(f"/api/resume/{rid}")
+        assert r.status_code == 200
+        assert r.json()["deleted"] is True
+        # resume gone
+        assert client.get(f"/api/resume/{rid}").status_code == 404
+        # analysis gone
+        assert client.get(f"/api/analysis/{match['analysis_id']}").status_code == 404
+        # history gone (resume no longer exists -> 404)
+        assert client.get(f"/api/resume/{rid}/history").status_code == 404
+
+    def test_delete_unknown_404(self, client):
+        assert client.delete("/api/resume/missing").status_code == 404
+
+
 class TestErrorEnvelope:
     def test_validation_error_format(self, client):
         r = client.post("/api/jobs/analyze", json={"resume_id": "x", "jobs": [{"description": "no"}]})

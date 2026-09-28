@@ -291,36 +291,43 @@ def _extract_projects(sections: dict[str, str]) -> list[dict[str, Any]]:
     return out
 
 
-def total_years_experience(text: str) -> float | None:
-    """Best-effort total professional experience in years."""
-    total = 0.0
-    found = False
-    for m in _DATE_RE.finditer(text):
-        end = (m.group("end") or "").lower()
-        start = m.group("start")
-        sy = _year_of(start)
-        if sy is None:
-            continue
-        ey = _year_of(end)
-        if ey is None:
-            continue
-        if 1950 <= sy <= datetime.now(timezone.utc).year and ey >= sy:
-            total += max(0.0, ey - sy)
-            found = True
-    # "Jan 2024 - Present" style: count start year -> now
-    for m in _DATE_PRESENT_RE.finditer(text):
-        sy = _year_of(m.group("start"))
-        if sy is None:
-            continue
-        if 1950 <= sy <= datetime.now(timezone.utc).year:
-            total += max(0.0, datetime.now(timezone.utc).year - sy)
-            found = True
+def total_years_experience(text: str, experience_section: str | None = None) -> float | None:
+    """Best-effort total professional experience in years.
+
+    Date ranges are counted ONLY from the experience section when one is
+    available — education date ranges ("B.Tech 2023 - 2027") must never count
+    as work experience. Explicit "X+ years" statements (the most reliable
+    signal) are scanned from the full text.
+    """
     explicit = _YEARS_RE.search(text)
     if explicit:
         try:
             return float(explicit.group(1))
         except ValueError:
             pass
+
+    scan_text = experience_section if experience_section is not None else text
+    total = 0.0
+    found = False
+    for m in _DATE_RE.finditer(scan_text):
+        start = m.group("start")
+        sy = _year_of(start)
+        if sy is None:
+            continue
+        ey = _year_of(m.group("end"))
+        if ey is None:
+            continue
+        if 1950 <= sy <= datetime.now(timezone.utc).year and ey >= sy:
+            total += max(0.0, ey - sy)
+            found = True
+    # "Jan 2024 - Present" style: count start year -> now
+    for m in _DATE_PRESENT_RE.finditer(scan_text):
+        sy = _year_of(m.group("start"))
+        if sy is None:
+            continue
+        if 1950 <= sy <= datetime.now(timezone.utc).year:
+            total += max(0.0, datetime.now(timezone.utc).year - sy)
+            found = True
     return round(total, 1) if found else None
 
 
@@ -344,7 +351,7 @@ def extract_resume_deterministic(text: str) -> dict[str, Any]:
         "projects": _extract_projects(sections),
         "certifications": _extract_certifications(sections),
         "skills": {sid: {"category": skill_category(sid), "evidence": ev[:2]} for sid, ev in skills_found.items()},
-        "total_years_experience": total_years_experience(text),
+        "total_years_experience": total_years_experience(text, sections.get("experience")),
         "sections_detected": sorted(sections.keys()),
     }
 
