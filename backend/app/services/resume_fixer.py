@@ -1,10 +1,10 @@
-"""Resume Fixer: directly improves an uploaded resume, in-place.
+﻿"""Resume Fixer: directly improves an uploaded resume, in-place.
 
 Two layers:
 
 1. DETERMINISTIC (always free, always runs):
-   - rebuild clean section ordering (Contact → Summary → Skills → Experience
-     → Projects → Education → Certifications → Achievements)
+   - rebuild clean section ordering (Contact â†’ Summary â†’ Skills â†’ Experience
+     â†’ Projects â†’ Education â†’ Certifications â†’ Achievements)
    - fix ATS formatting: uniform bullets, no special glyphs, consistent headings
    - normalize contact line; drop dead weight (empty lines, filler)
    - order skills by relevance when a JD is provided; surface job keywords
@@ -16,7 +16,7 @@ Two layers:
      with deterministic cleanup only.
 
 Output: fixed plain text + per-change diff log, so users see exactly what
-changed and why — nothing silent, nothing invented.
+changed and why â€” nothing silent, nothing invented.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ SECTION_ORDER = [
     ("ACHIEVEMENTS", "achievements"),
 ]
 
-_BULLET_GLYPHS = re.compile(r"^[\u2022\u00b7\u25aa\u25cf\u2023\u2043o\-–]\s*")
+_BULLET_GLYPHS = re.compile(r"^[\u2022\u00b7\u25aa\u25cf\u2023\u25e6\u2043\u2013\u2014o\-]\s*")
 _WEIRD_CHARS = re.compile(r"[\u2013\u2014\u2018\u2019\u201c\u201d\u2026\u00a0]")
 _ACTION_START = re.compile(
     r"^(?:built|designed|developed|created|implemented|deployed|optimized|improved|led|"
@@ -118,7 +118,7 @@ def _skills_block(raw_sections: dict[str, str], profile: dict[str, Any], jd: dic
         if jd_relevant:
             changes.append({
                 "section": "skills",
-                "change": f"Reordered skills — most relevant to this job ({len(jd_relevant)} matched) now listed first.",
+                "change": f"Reordered skills â€” most relevant to this job ({len(jd_relevant)} matched) now listed first.",
             })
         ordered = jd_relevant + other
     else:
@@ -166,7 +166,7 @@ def _body_block(section_text: str) -> tuple[str | None, bool]:
 
 _BULLET_REWRITE_SYSTEM = (
     "You rewrite resume bullet points. STRICT RULES: use ONLY facts, technologies and "
-    "numbers already present in the input bullet — never invent metrics, tools, or outcomes. "
+    "numbers already present in the input bullet â€” never invent metrics, tools, or outcomes. "
     "Transform into the pattern: strong action verb + what was built/done + technology + "
     "measurable result IF one is stated. Keep it under 30 words. Return JSON: "
     '{"rewrites": [{"original": "exact input line", "rewritten": "new line"}]}. '
@@ -261,7 +261,7 @@ def fix_resume(profile: dict[str, Any], raw_text: str, parsed_jd: dict[str, Any]
             blocks = new_blocks
             changes.append({
                 "section": "bullets",
-                "change": f"Strengthened {len(rewrites)} weak bullet(s) into action-verb form — using only your own stated facts.",
+                "change": f"Strengthened {len(rewrites)} weak bullet(s) into action-verb form â€” using only your own stated facts.",
             })
 
     # 6) assemble
@@ -278,7 +278,7 @@ def fix_resume(profile: dict[str, Any], raw_text: str, parsed_jd: dict[str, Any]
     fixed = "\n\n".join(parts).strip()
     if not fixed:
         fixed = raw_text  # never return emptiness
-        changes.append({"section": "fallback", "change": "No structural improvements possible — original kept."})
+        changes.append({"section": "fallback", "change": "No structural improvements possible â€” original kept."})
 
     if fixed != raw_text:
         n_added_kw = 0
@@ -291,6 +291,6 @@ def fix_resume(profile: dict[str, Any], raw_text: str, parsed_jd: dict[str, Any]
                     "section": "keywords",
                     "change": f"Skill names now spelled/ordered so ATS keyword matching finds {n_added_kw} more of the job's terms.",
                 })
-        changes.append({"section": "structure", "change": "Standardized section order and headings (Contact → Summary → Skills → Experience → Projects → Education)."})
+        changes.append({"section": "structure", "change": "Standardized section order and headings (Contact â†’ Summary â†’ Skills â†’ Experience â†’ Projects â†’ Education)."})
 
     return FixResult(fixed_text=fixed, changes=changes, llm_used=llm_used)

@@ -83,6 +83,10 @@ class Settings:
     # Uses Gemini's OpenAI-compatible endpoint, so the same client works.
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+    # FREE backup: Groq free tier (https://console.groq.com - no card).
+    # Used automatically when Gemini free quota is exhausted.
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    groq_model: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
     llm_enabled: bool = _get_bool("LLM_ENABLED", True)  # auto-fallback to heuristic if no key
     llm_timeout_s: int = _get_int("LLM_TIMEOUT_S", 45)
     llm_max_tokens: int = _get_int("LLM_MAX_TOKENS", 1500)

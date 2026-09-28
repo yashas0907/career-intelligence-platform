@@ -80,97 +80,152 @@ class CircuitBreaker:
 
 
 class LLMClient:
-    """Thin wrapper around the OpenAI-compatible chat completions API.
+    """Provider chain: OpenAI (paid) -> Gemini (free) -> Groq (free backup).
 
-    Works with OpenAI (paid) AND Google Gemini's OpenAI-compatible endpoint
-    (free tier) — provider is resolved in config, this client doesn't care.
+    Each provider gets its own circuit breaker. When one provider's free quota
+    is exhausted (429) or it 503s, the next provider is tried automatically —
+    so a dead quota on one service never kills the AI features.
     """
 
-    def __init__(self) -> None:
-        self._client: Any = None
-        self.breaker = CircuitBreaker(threshold=3, cooldown_s=600)
+    _PROVIDER_ORDER = ("openai", "gemini", "groq")
 
-    @property
-    def available(self) -> bool:
-        """Non-mutating: should callers attempt LLM features at all?
-        False while the circuit is hard-open (recent consecutive failures)."""
-        return settings.llm_available and not self.breaker.is_open
+    def __init__(self) -> None:
+        self._clients: dict[str, Any] = {}
+        self.breakers: dict[str, CircuitBreaker] = {
+            name: CircuitBreaker(threshold=3, cooldown_s=600) for name in self._PROVIDER_ORDER
+        }
+
+    def _configs(self) -> list[dict]:
+        """Ordered provider configs (only those with keys set)."""
+        out: list[dict] = []
+        if settings.openai_api_key.strip():
+            out.append({
+                "name": "openai",
+                "api_key": settings.openai_api_key,
+                "base_url": settings.openai_base_url or "https://api.openai.com/v1",
+                "model": settings.openai_model,
+            })
+        if settings.gemini_api_key.strip():
+            out.append({
+                "name": "gemini",
+                "api_key": settings.gemini_api_key,
+                "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+                "model": settings.gemini_model,
+            })
+        if settings.groq_api_key.strip():
+            out.append({
+                "name": "groq",
+                "api_key": settings.groq_api_key,
+                "base_url": "https://api.groq.com/openai/v1",
+                "model": settings.groq_model,
+            })
+        return out
 
     @property
     def provider(self) -> str:
-        return settings.llm_provider
+        names = [c["name"] for c in self._configs()]
+        return "+".join(names) if names else "none"
 
-    def _ensure_client(self) -> Any:
-        if not self.available:
-            raise LLMUnavailableError("No LLM API key configured.")
-        if self._client is None:
+    @property
+    def breaker(self) -> CircuitBreaker:
+        """Primary provider's breaker (default slot when nothing is configured —
+        used by tests to exercise breaker mechanics)."""
+        configs = self._configs()
+        return self.breakers[configs[0]["name"]] if configs else self.breakers["openai"]
+
+    @property
+    def available(self) -> bool:
+        """Non-mutating: at least one provider configured and not all circuits
+        hard-open."""
+        configs = self._configs()
+        if not configs or not settings.llm_enabled:
+            return False
+        return not all(self.breakers[c["name"]].is_open for c in configs)
+
+    def _client_for(self, cfg: dict) -> Any:
+        if cfg["name"] not in self._clients:
             from openai import OpenAI
 
-            kwargs: dict[str, Any] = {"api_key": settings.effective_llm_api_key}
-            if settings.effective_llm_base_url:
-                kwargs["base_url"] = settings.effective_llm_base_url
-            self._client = OpenAI(**kwargs)
-        return self._client
+            kwargs: dict[str, Any] = {"api_key": cfg["api_key"]}
+            if cfg["base_url"]:
+                kwargs["base_url"] = cfg["base_url"]
+            self._clients[cfg["name"]] = OpenAI(**kwargs)
+        return self._clients[cfg["name"]]
 
-    def chat_stream(self, system: str, user: str, *, json_mode: bool = False):
-        """Token-streaming completion. Yields content deltas; raises on failure.
-        Respects the circuit breaker (fail fast when provider is down)."""
-        client = self._ensure_client()
+    def _payload(self, system: str, user: str) -> str:
         if len(user) > settings.llm_guard_max_chars:
-            user = user[: settings.llm_guard_max_chars]
             logger.warning("LLM user payload truncated to %d chars", settings.llm_guard_max_chars)
-        try:
-            stream = client.chat.completions.create(
-                model=settings.effective_llm_model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                temperature=0.2,
-                max_tokens=settings.llm_max_tokens,
-                timeout=settings.llm_timeout_s,
-                stream=True,
-                **({"response_format": {"type": "json_object"}} if json_mode else {}),
-            )
-            self.breaker.record_success()
-            for chunk in stream:
-                delta = chunk.choices[0].delta
-                if delta and delta.content:
-                    yield delta.content
-        except Exception as exc:  # noqa: BLE001
-            if self._is_retryable(exc):
-                self.breaker.record_failure()
-            logger.error("LLM stream failed: %s", exc)
-            raise
-
-    _RETRYABLE_SUBSTRINGS = ("429", "503", "high demand", "overloaded", "rate limit", "timeout")
-
-    @staticmethod
-    def _is_retryable(exc: Exception) -> bool:
-        msg = str(exc).lower()
-        return any(s in msg for s in LLMClient._RETRYABLE_SUBSTRINGS)
+            return user[: settings.llm_guard_max_chars]
+        return user
 
     def chat(self, system: str, user: str, *, json_mode: bool = False) -> str:
-        """Single-turn completion with retry/backoff for transient provider
-        errors (429 rate limits, 503 load spikes). A circuit breaker fails fast
-        once the provider is clearly down (e.g. exhausted free-tier quota), so
-        requests never hang on multi-second retry chains. Raises on final
-        failure; callers handle fallback."""
-        client = self._ensure_client()
-        if not self.breaker.allow_probe():
-            raise LLMUnavailableError("LLM circuit open — provider recently failed repeatedly.")
-        # Truncate user payload defensively (prompt-injection / cost guard)
-        if len(user) > settings.llm_guard_max_chars:
-            user = user[: settings.llm_guard_max_chars]
-            logger.warning("LLM user payload truncated to %d chars", settings.llm_guard_max_chars)
-        delays = (2, 5)  # two retries: wait 2s, then 5s
+        """Single-turn completion walking the provider chain: retries with
+        backoff per provider (429/503), circuit-breaker fail-fast, then the
+        next provider. Raises on final failure; callers handle fallback."""
+        user = self._payload(system, user)
+        configs = self._configs()
+        if not configs:
+            raise LLMUnavailableError("No LLM API key configured.")
         last_exc: Exception | None = None
-        for delay_before in (0,) + delays:
-            if delay_before:
-                time.sleep(delay_before)
+        for cfg in configs:
+            breaker = self.breakers[cfg["name"]]
+            if breaker.is_open or not breaker.allow_probe():
+                continue  # known-dead provider — fail fast, try the next
+            client = self._client_for(cfg)
+            for delay_before in (0, 2, 5):
+                if delay_before:
+                    time.sleep(delay_before)
+                try:
+                    resp = client.chat.completions.create(
+                        model=cfg["model"],
+                        messages=[
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user},
+                        ],
+                        temperature=0.2,
+                        max_tokens=settings.llm_max_tokens,
+                        timeout=settings.llm_timeout_s,
+                        **({"response_format": {"type": "json_object"}} if json_mode else {}),
+                    )
+                    content = resp.choices[0].message.content or ""
+                    logger.info("LLM call ok via %s: %d chars out", cfg["name"], len(content))
+                    breaker.record_success()
+                    return content
+                except Exception as exc:  # noqa: BLE001
+                    last_exc = exc
+                    if self._is_retryable(exc):
+                        breaker.record_failure()
+                        if breaker.is_open:
+                            logger.error("LLM circuit open for %s — failing fast: %s", cfg["name"], str(exc)[:160])
+                            break  # move to the next provider
+                        logger.warning("LLM transient error via %s (will retry): %s", cfg["name"], str(exc)[:160])
+                        continue
+                    # non-retryable for THIS provider (e.g. unknown model) —
+                    # the same request may well work on the next one
+                    logger.error("LLM call failed via %s: %s", cfg["name"], str(exc)[:160])
+                    break
+        if last_exc:
+            logger.error("All LLM providers failed: %s", last_exc)
+            raise last_exc
+        raise LLMUnavailableError("All LLM provider circuits are open.")
+
+    def chat_stream(self, system: str, user: str, *, json_mode: bool = False):
+        """Token-streaming completion walking the provider chain. Yields content
+        deltas from the first provider that works; raises on final failure."""
+        user = self._payload(system, user)
+        configs = self._configs()
+        if not configs:
+            raise LLMUnavailableError("No LLM API key configured.")
+        last_exc: Exception | None = None
+        produced = False
+        for cfg in configs:
+            breaker = self.breakers[cfg["name"]]
+            if breaker.is_open or not breaker.allow_probe():
+                continue
+            client = self._client_for(cfg)
             try:
-                resp = client.chat.completions.create(
-                    model=settings.effective_llm_model,
+                stream = client.chat.completions.create(
+                    model=cfg["model"],
                     messages=[
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
@@ -178,28 +233,25 @@ class LLMClient:
                     temperature=0.2,
                     max_tokens=settings.llm_max_tokens,
                     timeout=settings.llm_timeout_s,
+                    stream=True,
                     **({"response_format": {"type": "json_object"}} if json_mode else {}),
                 )
-                content = resp.choices[0].message.content or ""
-                logger.info("LLM call ok: %d chars out", len(content))
-                self.breaker.record_success()
-                return content
+                for chunk in stream:
+                    delta = chunk.choices[0].delta
+                    if delta and delta.content:
+                        produced = True
+                        yield delta.content
+                if produced:
+                    breaker.record_success()
+                    return
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 if self._is_retryable(exc):
-                    # trip counter + fail fast if the breaker just opened
-                    self.breaker.record_failure()
-                    if self.breaker.is_open:
-                        logger.error("LLM circuit open — failing fast: %s", str(exc)[:160])
-                        raise
-                    logger.warning("LLM transient error (will retry): %s", str(exc)[:160])
-                    continue
-                logger.error("LLM call failed: %s", exc)
-                raise
-        logger.error("LLM call failed after retries: %s", last_exc)
-        raise last_exc  # type: ignore[misc]
-        logger.error("LLM call failed after retries: %s", last_exc)
-        raise last_exc  # type: ignore[misc]
+                    breaker.record_failure()
+                logger.error("LLM stream failed via %s: %s", cfg["name"], str(exc)[:160])
+        if last_exc:
+            raise last_exc
+        raise LLMUnavailableError("All LLM provider circuits are open.")
 
 
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(\{.*?}|\[.*?])\s*```", re.DOTALL)

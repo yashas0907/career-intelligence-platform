@@ -260,7 +260,7 @@ def _short_text_anchors() -> tuple[float, float]:
     backend_name = get_backend().name
     if backend_name.startswith("hashing"):
         return 0.04, 0.25
-    return 0.25, 0.55
+    return 0.20, 0.50
 
 
 def score_projects(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: str | None = None) -> dict[str, Any]:
@@ -397,7 +397,7 @@ def _semantic_anchors() -> tuple[float, float]:
     """
     backend_name = get_backend().name
     if backend_name.startswith("hashing"):
-        return 0.18, 0.50
+        return 0.15, 0.45
     return 0.30, 0.65
 
 

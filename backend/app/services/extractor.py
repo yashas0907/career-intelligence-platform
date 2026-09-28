@@ -105,7 +105,11 @@ _PHONE_RE = re.compile(
 _LINKEDIN_RE = re.compile(r"(?:https?://)?(?:www\.)?linkedin\.com/in/[\w\-/%]+", re.IGNORECASE)
 _GITHUB_RE = re.compile(r"(?:https?://)?(?:www\.)?github\.com/[\w\-]+", re.IGNORECASE)
 _URL_RE = re.compile(r"https?://[^\s)+,;]+")
-_BULLET_RE = re.compile(r"^\s*(?:[-•*·▪]|\d+[.)])\s+(.*)$")
+# Bullet glyphs: hyphen, •, *, ·, ▪, ‣, ◦, – (en-dash), — (em-dash) — real
+# job descriptions and resumes use all of these; missing any silently drops
+# every bullet line from extraction.
+_BULLET_CHARS = r"[-\u2022\u00b7*\u25aa\u25cf\u2023\u25e6\u2013\u2014]"
+_BULLET_RE = re.compile(rf"^\s*(?:{_BULLET_CHARS}|\d+[.)])\s+(.*)$")
 _DATE_RE = re.compile(
     r"(?P<start>(?:\d{4})|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4})"
     r"\s*(?:[-\u2013\u2014]|\bto\b)\s*"
@@ -291,7 +295,11 @@ def _extract_projects(sections: dict[str, str]) -> list[dict[str, Any]]:
     return out
 
 
-def total_years_experience(text: str, experience_section: str | None = None) -> float | None:
+def total_years_experience(
+    text: str,
+    experience_section: str | None = None,
+    exclude_text: str | None = None,
+) -> float | None:
     """Best-effort total professional experience in years.
 
     Date ranges are counted ONLY from the experience section when one is
@@ -306,7 +314,15 @@ def total_years_experience(text: str, experience_section: str | None = None) -> 
         except ValueError:
             pass
 
-    scan_text = experience_section if experience_section is not None else text
+    if experience_section is not None:
+        scan_text = experience_section
+    elif exclude_text:
+        # No experience section: scan the full text MINUS the excluded body
+        # (the education section) so degree date ranges never count, while
+        # custom-section experience still does.
+        scan_text = text.replace(exclude_text, "")
+    else:
+        scan_text = text
     total = 0.0
     found = False
     for m in _DATE_RE.finditer(scan_text):
@@ -351,7 +367,9 @@ def extract_resume_deterministic(text: str) -> dict[str, Any]:
         "projects": _extract_projects(sections),
         "certifications": _extract_certifications(sections),
         "skills": {sid: {"category": skill_category(sid), "evidence": ev[:2]} for sid, ev in skills_found.items()},
-        "total_years_experience": total_years_experience(text, sections.get("experience")),
+        "total_years_experience": total_years_experience(
+            text, sections.get("experience"), sections.get("education")
+        ),
         "sections_detected": sorted(sections.keys()),
     }
 
@@ -458,7 +476,7 @@ def extract_resume(text: str) -> dict[str, Any]:
 
 _SENIORITY_RE = re.compile(r"\b(intern(?:ship)?|junior|entry[- ]level|mid[- ]level|senior|lead|principal|staff)\b", re.IGNORECASE)
 _MIN_YEARS_RE = re.compile(r"(\d{1,2})\+?\s*(?:-|to)?\s*(?:years?|yrs?)", re.IGNORECASE)
-_REQ_LINE_RE = re.compile(r"^\s*(?:[-•*·]|\d+[.)])\s+(.+)$", re.MULTILINE)
+_REQ_LINE_RE = re.compile(rf"^\s*(?:{_BULLET_CHARS}|\d+[.)])\s+(.+)$", re.MULTILINE)
 
 
 def _split_required_preferred(jd_text: str) -> tuple[list[str], list[str]]:
