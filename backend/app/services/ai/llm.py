@@ -158,6 +158,13 @@ class LLMClient:
             return user[: settings.llm_guard_max_chars]
         return user
 
+    _RETRYABLE_SUBSTRINGS = ("429", "503", "high demand", "overloaded", "rate limit", "timeout")
+
+    @staticmethod
+    def _is_retryable(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return any(s in msg for s in LLMClient._RETRYABLE_SUBSTRINGS)
+
     def chat(self, system: str, user: str, *, json_mode: bool = False) -> str:
         """Single-turn completion walking the provider chain: retries with
         backoff per provider (429/503), circuit-breaker fail-fast, then the

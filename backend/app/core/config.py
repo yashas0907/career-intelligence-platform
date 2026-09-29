@@ -86,7 +86,7 @@ class Settings:
     # FREE backup: Groq free tier (https://console.groq.com - no card).
     # Used automatically when Gemini free quota is exhausted.
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
-    groq_model: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    groq_model: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     llm_enabled: bool = _get_bool("LLM_ENABLED", True)  # auto-fallback to heuristic if no key
     llm_timeout_s: int = _get_int("LLM_TIMEOUT_S", 45)
     llm_max_tokens: int = _get_int("LLM_MAX_TOKENS", 1500)
@@ -104,12 +104,15 @@ class Settings:
 
     @property
     def llm_provider(self) -> str:
-        """openai | gemini | none (provider precedence: explicit OpenAI > free Gemini)."""
+        """Configured LLM providers in priority order, e.g. openai / gemini / gemini+groq / none."""
+        names = []
         if self.openai_api_key.strip():
-            return "openai"
+            names.append("openai")
         if self.gemini_api_key.strip():
-            return "gemini"
-        return "none"
+            names.append("gemini")
+        if self.groq_api_key.strip():
+            names.append("groq")
+        return "+".join(names) if names else "none"
 
     @property
     def effective_llm_api_key(self) -> str:
@@ -174,3 +177,4 @@ logger.info(
     settings.effective_llm_model if settings.llm_available else "offline",
     settings.embedding_backend,
 )
+
