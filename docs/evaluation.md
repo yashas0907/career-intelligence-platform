@@ -5,7 +5,7 @@
 ### 1. Deterministic components â†’ classic unit tests
 
 Scoring, normalization, parsing, and ATS checks are pure functions, so they are
-verified with exact assertions in the test suite (156 tests):
+verified with exact assertions in the test suite (157 tests):
 
 - **Scoring**: weights sum to 1; required-skills 3Ã— weighting formula is verified
   numerically; monotonicity (better candidate â‡’ higher score); determinism
@@ -105,5 +105,6 @@ Verifiable properties instead of unverifiable accuracy claims:
   chunks + the answer, scores support 0â€“1) â€” cheap, automatable, honest.
 - Property-based testing (hypothesis) for the scoring engine: random profiles,
   assert invariants (bounds, monotonicity in added skills).
+
 
 

@@ -163,12 +163,13 @@ class TestGeminiConfig:
         }
         assert extract_json('```json\n{"ok": true}\n```') == {"ok": True}
         assert extract_json('prefix text {"mid": 1} suffix') == {"mid": 1}
-    def _make(self, openai_key: str, gemini_key: str):
-        """Dataclass field defaults are evaluated at import time, so we pass
-        keys as constructor arguments instead of touching os.environ."""
+    def _make(self, openai_key: str, gemini_key: str, groq_key: str = ""):
+        """Dataclass field defaults are evaluated at import time AND the real
+        .env file leaks into the test process — so we pass every key explicitly
+        as constructor arguments to isolate the test."""
         from app.core.config import Settings
 
-        return Settings(openai_api_key=openai_key, gemini_api_key=gemini_key)
+        return Settings(openai_api_key=openai_key, gemini_api_key=gemini_key, groq_api_key=groq_key)
 
     def test_gemini_provider_resolution(self):
         # conftest sets LLM_ENABLED=false for the whole suite, so build a copy
@@ -183,15 +184,22 @@ class TestGeminiConfig:
         s_on = Settings(openai_api_key="", gemini_api_key="test-key", llm_enabled=True)
         assert s_on.llm_available is True
 
-    def test_openai_wins_over_gemini(self):
-        s = self._make("sk-x", "gk-y")
-        assert s.llm_provider == "openai"
+    def test_provider_chain_includes_groq(self):
+        s = self._make("", "gem-key", "gsk-key")
+        assert s.llm_provider == "gemini+groq", "chain lists providers in priority order"
+
+    def test_openai_takes_priority_in_chain(self):
+        s = self._make("sk-x", "gk-y", "gq-z")
+        assert s.llm_provider == "openai+gemini+groq"
 
     def test_neither_key_offline(self):
-        s = self._make("", "")
+        s = self._make("", "", "")
         assert s.llm_provider == "none"
         assert s.llm_available is False
 
     def test_health_reports_provider(self, client):
         r = client.get("/api/health").json()
-        assert "llm_provider" in r and r["llm_provider"] in {"openai", "gemini", "none"}
+        assert "llm_provider" in r
+        # provider is a chain string; every token must be a known provider
+        tokens = set(r["llm_provider"].split("+"))
+        assert tokens <= {"openai", "gemini", "groq", "none"}
