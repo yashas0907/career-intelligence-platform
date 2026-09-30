@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field, field_validator
 class JobIn(BaseModel):
     title: str | None = Field(default=None, max_length=300)
     company: str | None = Field(default=None, max_length=200)
-    description: str = Field(min_length=30, max_length=40000)
+    # Short role-title-only JDs are valid input — the pipeline infers the
+    # role's skill set from the title (role inference) and handles them honestly.
+    description: str = Field(min_length=5, max_length=40000)
 
     @field_validator("description")
     @classmethod

@@ -127,10 +127,19 @@ class TestJobAnalysis:
         )
         assert r.status_code == 404
 
-    def test_short_description_422(self, client, uploaded_resume):
+    def test_short_description_still_analyzed(self, client, uploaded_resume):
+        """Role-title-only JDs are valid — the pipeline infers from the title."""
         r = client.post(
             "/api/jobs/analyze",
-            json={"resume_id": uploaded_resume["resume_id"], "jobs": [{"description": "too short"}]},
+            json={"resume_id": uploaded_resume["resume_id"], "jobs": [{"title": "web developer", "description": "web developer"}]},
+        )
+        assert r.status_code == 200
+        assert 0.0 <= r.json()[0]["overall_score"] <= 1.0
+
+    def test_blank_description_422(self, client, uploaded_resume):
+        r = client.post(
+            "/api/jobs/analyze",
+            json={"resume_id": uploaded_resume["resume_id"], "jobs": [{"description": "  "}]},
         )
         assert r.status_code == 422
 

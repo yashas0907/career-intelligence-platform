@@ -34,9 +34,9 @@ export default function JobAnalyzer({
 
   async function analyze() {
     if (!resume) return
-    const valid = drafts.filter((d) => d.description.trim().length >= 30)
+    const valid = drafts.filter((d) => d.description.trim().length >= 5)
     if (!valid.length) {
-      setError('Each job description needs at least 30 characters of text.')
+      setError('Each job needs at least a role title as the description (e.g. "web developer").')
       return
     }
     setBusy(true)
