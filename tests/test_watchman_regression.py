@@ -162,9 +162,17 @@ class TestScoreDifferentiation:
         assert res["score"] < 0.30, f"watchman semantic {res['score']:.0%} still too generous"
 
     def test_semantic_not_inflated_by_stopwords(self):
-        # a JD of pure function words must score ~0 semantic
+        # a SHORT pure-function-words JD is tiny -> non-informative neutral
         res = score_semantic(TECH_RESUME, {}, "We are hiring for the role in the team at the company")
-        assert res["score"] < 0.20
+        assert res.get("informative") is False
+        assert res["score"] <= 0.3
+
+        # a LONG pure-function-words JD stays informative but must score ~0 —
+        # stopword filtering kills generic-word cosine
+        filler = "We are hiring for the role in the team at the company and they will be working with it. " * 4
+        res2 = score_semantic(TECH_RESUME, {}, filler)
+        assert res2.get("informative") is True
+        assert res2["score"] < 0.20, f"stopword-inflated semantic: {res2['score']:.0%}"
 
 
 class TestStopwordFiltering:

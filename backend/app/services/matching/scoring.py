@@ -31,7 +31,7 @@ from typing import Any
 import numpy as np
 
 from app.services.ai.embeddings import get_backend, semantic_similarity
-from app.services.skills import normalizer, related_skills, skill_category, skill_display
+from app.services.skills import infer_role_skills, normalizer, related_skills, skill_category, skill_display
 
 logger = logging.getLogger("app.scoring")
 
@@ -45,6 +45,12 @@ WEIGHTS = {
 REQUIRED_WEIGHT = 3.0
 PREFERRED_WEIGHT = 1.0
 TRANSFERABLE_CREDIT = 0.6
+# Role-inferred requirements are lower confidence than explicitly stated ones —
+# the skills score is capped by this factor when inferred from the role title.
+ROLE_INFERRED_CONFIDENCE = 0.85
+# JD text below these lengths carries no reliable document-level signal
+TINY_JD_CHARS = 200
+TINY_REQ_CHARS = 120
 
 CATEGORY_PENALTY_BONUS = {
     # required skill categories the resume can partially satisfy via related stacks
@@ -119,15 +125,27 @@ def compare_skills(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
     # scan the whole JD text for non-soft taxonomy skills and score against
     # those (honest overlap). Soft skills alone never count — a resume that
     # lists "communication" must not earn a 100% skills score off a watchman JD.
-    if not required and not preferred and jd_text:
-        found = set(normalizer.extract(jd_text).keys())
-        found = {s for s in found if skill_category(s) != "soft"}
-        if found:
-            required = sorted(found)
-            skills_source = "full_text"
+    if not required and not preferred:
+        jd_is_tiny = len((jd_text or "").strip()) < TINY_JD_CHARS
+        if not jd_is_tiny and jd_text:
+            # Fuller JD: scan the whole text for non-soft taxonomy skills.
+            found = set(normalizer.extract(jd_text).keys())
+            found = {s for s in found if skill_category(s) != "soft"}
+            if found:
+                required = sorted(found)
+                skills_source = "full_text"
+
+        if not required and not preferred:
+            # Thin JD (a role title / one-liner): the signal lives in the ROLE
+            # TITLE. "web developer" implies a web skill set — infer it and
+            # score against it (confidence-capped) instead of neutral filler.
+            role_text = f"{parsed_jd.get('title') or ''} {jd_text or ''}"
+            inferred = infer_role_skills(role_text)
+            if inferred:
+                required = inferred
+                skills_source = "role_inferred"
 
     if not required and not preferred:
-        # No recognizable skill requirements at all -> NEUTRAL, never free 100%.
         return {
             "score": 0.5,
             "informative": False,
@@ -139,6 +157,10 @@ def compare_skills(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
             "missing_preferred": [],
             "note": "No recognizable skill requirements in this job description — neutral skills credit; the match relies on overall relevance.",
         }
+
+    # Both inferred sources are lower-confidence than explicitly stated
+    # requirement bullets — the skills score is capped for either.
+    inferred_based = skills_source in {"role_inferred", "full_text"}
 
     details: list[SkillMatchDetail] = []
     strong: list[SkillMatchDetail] = []
@@ -189,6 +211,11 @@ def compare_skills(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
         total_score += w * d.score
     skills_score = total_score / total_weight if total_weight else 1.0
 
+    if inferred_based:
+        # inferred requirements (title-derived or full-text scan) are lower
+        # confidence than explicitly stated ones
+        skills_score *= ROLE_INFERRED_CONFIDENCE
+
     return {
         "score": round(skills_score, 4),
         "informative": True,
@@ -198,6 +225,11 @@ def compare_skills(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
         "transferable": [d.__dict__ for d in transferable],
         "missing_required": [d.__dict__ for d in missing_required],
         "missing_preferred": [d.__dict__ for d in missing_preferred],
+        "note": (
+            "Skill requirements inferred from the role title — the job description had no explicit requirement list."
+            if skills_source == "role_inferred"
+            else ""
+        ),
     }
 
 
@@ -271,8 +303,13 @@ def score_projects(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
     req_text = " ".join(parsed_jd.get("required_bullets") or [])
     if not req_text:
         req_text = jd_text or ""  # sparse JD: compare against the whole job text
-    if not req_text:
-        return {"score": 0.6, "informative": False, "evidence": ["No job text to compare projects against"]}
+    if not req_text or len(req_text.strip()) < TINY_REQ_CHARS:
+        # nothing (or a one-liner) to compare projects against — no signal
+        return {
+            "score": 0.4,
+            "informative": False,
+            "evidence": ["Job description too short to compare projects against — neutral credit"],
+        }
 
     lo, hi = _short_text_anchors()
 
@@ -402,6 +439,15 @@ def _semantic_anchors() -> tuple[float, float]:
 
 
 def score_semantic(resume_text: str, parsed_jd: dict[str, Any], jd_text: str) -> dict[str, Any]:
+    # A tiny JD (one-liner like "web developer") can't carry document-level
+    # signal — cosine vs any resume is ~0. Neutral, non-informative.
+    if len((jd_text or "").strip()) < TINY_JD_CHARS:
+        return {
+            "score": 0.3,
+            "informative": False,
+            "raw_similarity": round(semantic_similarity(resume_text, jd_text or " "), 4),
+            "evidence": ["Job description too short for reliable document-level relevance — neutral credit"],
+        }
     sim = semantic_similarity(resume_text, jd_text)
     lo, hi = _semantic_anchors()
     stretched = max(0.0, min(1.0, (sim - lo) / (hi - lo)))
@@ -436,7 +482,21 @@ def analyze_match(profile: dict[str, Any], resume_text: str, parsed_jd: dict[str
     total_eff = sum(effective.values())
     if total_eff > 0:
         effective = {k: w / total_eff for k, w in effective.items()}
-    else:  # unreachable: semantic is always informative — safety net
+    elif all(not v for v in informative.values()):
+        # NOTHING in the JD carried signal — averaging neutral defaults would
+        # fabricate a ~48%; the honest answer is a flat low score with a note.
+        overall_flat = 0.3
+        return {
+            "overall_score": overall_flat,
+            "breakdown": {k: round(components[k]["score"], 4) for k in WEIGHTS},
+            "weights": dict(WEIGHTS),
+            "base_weights": WEIGHTS,
+            "weights_redistributed": True,
+            "components": components,
+            "note": "This job description has no usable signal (no requirements, too short) — the score is a flat low default.",
+            "methodology": "See docs/scoring.md — weighted deterministic components with dynamic redistribution for sparse JDs; no LLM involvement in scoring.",
+        }
+    else:  # unreachable safety net
         effective = dict(WEIGHTS)
 
     overall = sum(effective[k] * components[k]["score"] for k in effective)

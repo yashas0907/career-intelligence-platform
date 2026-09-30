@@ -40,6 +40,14 @@ def run_match(db: Session, resume: Resume, job: Job) -> Analysis:
     parsed_jd = job.parsed
 
     result = analyze_match(profile, resume.raw_text, parsed_jd, job.raw_text)
+
+    # Role-inferred requirements (thin JDs) feed recommendations + ATS too,
+    # so "align a project with the job's core stack" names a real stack.
+    skills_comp = result["components"]["skills"]
+    if skills_comp.get("skills_source") == "role_inferred":
+        inferred = [d["skill"] for d in skills_comp.get("details", [])]
+        parsed_jd = {**parsed_jd, "required_skills": inferred}
+
     ats = analyze_ats(profile, resume.raw_text, parsed_jd, resume.parse_method)
     recs = build_recommendations(result, profile, parsed_jd)
     job_title = job.title or "Role"

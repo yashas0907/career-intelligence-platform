@@ -36,6 +36,11 @@ def deterministic_explanation(result: dict[str, Any], job_title: str) -> str:
     if not skills.get("informative", True):
         lines.append(f"  ! {skills.get('note', 'No recognizable skill requirements in this job description.')}")
         lines.append("  ! Score is based on overall relevance (semantic + projects), not skill overlap.")
+    elif skills.get("skills_source") == "role_inferred":
+        lines.append(f"  ! {skills.get('note')}")
+
+    if result.get("note"):
+        lines.append(f"  ! {result['note']}")
 
     if result.get("weights_redistributed"):
         lines.append("  ! Weight redistributed: components with no real signal gave their weight to semantic/project relevance.")

@@ -128,6 +128,7 @@ _RAW: list[SkillMeta] = [
     SkillMeta("deep-learning", "Deep Learning", "concept", ("dl", "neural networks", "neural nets", "ann", "dnn", "cnn", "rnn"), ("machine-learning", "pytorch")),
     SkillMeta("nlp", "Natural Language Processing", "concept", ("natural language processing", "text mining", "computational linguistics"), ("machine-learning",)),
     SkillMeta("computer-vision", "Computer Vision", "concept", ("cv", "image processing", "image classification", "object detection", "image recognition"), ("deep-learning", "opencv")),
+    SkillMeta("networking", "Computer Networks", "concept", ("computer networks", "networking", "tcp/ip", "dns", "http protocol", "socket programming"), ("cybersecurity", "linux")),
     SkillMeta("llm", "Large Language Models", "concept", ("large language models", "llms", "gpt", "gpt-4", "gpt-3", "chatgpt", "generative ai", "genai", "gen ai", "openai api"), ("nlp",)),
     SkillMeta("rag", "RAG", "concept", ("retrieval augmented generation", "retrieval-augmented generation"), ("llm", "embeddings")),
     SkillMeta("embeddings", "Embeddings", "concept", ("word embeddings", "sentence embeddings", "vector embeddings", "semantic similarity"), ("rag",)),
@@ -246,3 +247,56 @@ class SkillNormalizer:
 
 # module-level singleton used across the app
 normalizer = SkillNormalizer()
+
+
+# ---------------------------------------------------------------------------
+# Role-skill inference: thin JDs ("web developer", "i wanna work in AI")
+# carry their signal in the ROLE TITLE, not in requirement bullets.
+# A "web developer" title implies a web skill set — this curated table maps
+# role keywords to expected taxonomy skills so thin JDs match honestly
+# instead of collapsing to neutral filler.
+# Order matters: most specific role patterns first, generic last.
+# Soft skills excluded everywhere (consistent with JD extraction).
+# ---------------------------------------------------------------------------
+
+_ROLE_SKILL_SETS: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
+    (("frontend developer", "frontend engineer", "ui developer", "ui engineer", "frontend"),
+     ("javascript", "typescript", "html", "css", "react", "vue", "angular", "rest-api")),
+    (("backend developer", "backend engineer", "api developer", "backend"),
+     ("python", "java", "nodejs", "sql", "rest-api", "docker", "postgresql", "mongodb", "redis", "linux")),
+    (("full stack", "fullstack", "full-stack", "web developer", "web development", "web dev"),
+     ("javascript", "typescript", "html", "css", "react", "nodejs", "rest-api", "sql", "git", "mongodb")),
+    (("data analyst", "data analytics", "business analyst", "analyst"),
+     ("sql", "python", "excel", "pandas", "statistics", "data-visualization", "powerbi", "tableau")),
+    (("data scientist", "data science"),
+     ("python", "sql", "pandas", "numpy", "scikit-learn", "machine-learning", "statistics", "data-visualization")),
+    (("machine learning engineer", "ml engineer", "machine learning intern", "ml intern", "ai engineer", "machine learning", "deep learning"),
+     ("python", "pytorch", "tensorflow", "scikit-learn", "machine-learning", "deep-learning", "pandas", "numpy", "mlops")),
+    (("cyber security", "cybersecurity", "security analyst", "security engineer", "infosec", "penetration tester"),
+     ("cybersecurity", "linux", "python", "bash", "networking", "docker", "aws")),
+    (("devops engineer", "devops", "site reliability", "sre"),
+     ("docker", "kubernetes", "jenkins", "terraform", "linux", "aws", "bash")),
+    (("mobile app", "android developer", "ios developer", "app developer"),
+     ("kotlin", "swift", "java", "react", "rest-api")),
+    (("ai", "artificial intelligence", "genai", "generative ai"),
+     ("python", "llm", "rag", "prompt-engineering", "embeddings", "machine-learning", "deep-learning")),
+    (("software engineer", "software developer", "sde", "developer", "programmer"),
+     ("python", "java", "javascript", "sql", "git", "docker", "rest-api")),
+]
+
+
+def infer_role_skills(text: str) -> list[str]:
+    """Infer the expected skill set from a role title / thin JD text.
+
+    Word-boundary matching ("maintenance" must not trigger the generic "ai"
+    pattern). Returns taxonomy skill ids for the FIRST (most specific) matching
+    role pattern, or [] when no role pattern matches.
+    """
+    if not text:
+        return []
+    lowered = text.lower()
+    for keywords, skills in _ROLE_SKILL_SETS:
+        for kw in keywords:
+            if re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", lowered):
+                return list(skills)
+    return []

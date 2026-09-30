@@ -112,13 +112,14 @@ def chat_stream(payload: ChatRequest, db: Session = Depends(get_db)) -> Streamin
 
     analysis_payload = _build_analysis_payload(analysis) if analysis else None
     question = payload.question
+    history = _get_history(db, analysis.id) if analysis else []
 
     def event_stream():
         full_answer: list[str] = []
         final_sources: list[dict] = []
         final_method = "none"
         try:
-            for event in answer_question_stream(question, store, analysis_payload):
+            for event in answer_question_stream(question, store, analysis_payload, history):
                 if event["type"] == "meta":
                     final_sources = event["sources"]
                     yield f"data: {json.dumps({'type': 'meta', 'sources': event['sources']})}\n\n"

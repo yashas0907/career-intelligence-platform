@@ -165,7 +165,7 @@ class LLMClient:
         msg = str(exc).lower()
         return any(s in msg for s in LLMClient._RETRYABLE_SUBSTRINGS)
 
-    def chat(self, system: str, user: str, *, json_mode: bool = False) -> str:
+    def chat(self, system: str, user: str, *, json_mode: bool = False, temperature: float = 0.2) -> str:
         """Single-turn completion walking the provider chain: retries with
         backoff per provider (429/503), circuit-breaker fail-fast, then the
         next provider. Raises on final failure; callers handle fallback."""
@@ -189,7 +189,7 @@ class LLMClient:
                             {"role": "system", "content": system},
                             {"role": "user", "content": user},
                         ],
-                        temperature=0.2,
+                        temperature=temperature,
                         max_tokens=settings.llm_max_tokens,
                         timeout=settings.llm_timeout_s,
                         **({"response_format": {"type": "json_object"}} if json_mode else {}),
@@ -216,7 +216,7 @@ class LLMClient:
             raise last_exc
         raise LLMUnavailableError("All LLM provider circuits are open.")
 
-    def chat_stream(self, system: str, user: str, *, json_mode: bool = False):
+    def chat_stream(self, system: str, user: str, *, json_mode: bool = False, temperature: float = 0.2):
         """Token-streaming completion walking the provider chain. Yields content
         deltas from the first provider that works; raises on final failure."""
         user = self._payload(system, user)
@@ -237,7 +237,7 @@ class LLMClient:
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
-                    temperature=0.2,
+                    temperature=temperature,
                     max_tokens=settings.llm_max_tokens,
                     timeout=settings.llm_timeout_s,
                     stream=True,
@@ -299,3 +299,4 @@ def extract_json(text: str) -> Any:
 
 
 llm = LLMClient()
+
