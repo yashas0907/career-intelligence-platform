@@ -47,13 +47,52 @@ logger = logging.getLogger("app.extractor")
 # ---------------------------------------------------------------------------
 
 SECTION_PATTERNS: dict[str, list[str]] = {
-    "experience": [r"work\s+experience", r"professional\s+experience", r"employment", r"experience", r"work\s+history"],
-    "education": [r"education", r"academic\s+background"],
-    "projects": [r"projects", r"personal\s+projects", r"academic\s+projects"],
-    "skills": [r"technical\s+skills", r"skills", r"technologies", r"tech\s+stack"],
-    "certifications": [r"certifications?", r"licenses?", r"courses?"],
-    "achievements": [r"achievements?", r"awards?", r"honors?", r"accomplishments"],
-    "summary": [r"summary", r"objective", r"profile", r"about\s+me"],
+    "experience": [
+        r"work\s+experience",
+        r"professional\s+experience",
+        r"relevant\s+experience",
+        r"employment(?:\s+history)?",
+        r"experience",
+        r"experience\s*(?:&|and|with)\s*(?:projects?|internships?)",
+        r"internships?(?:\s*(?:&|and)\s*(?:experience|projects?))?",
+    ],
+    "education": [
+        r"education",
+        r"educational\s+(?:background|qualifications?)",
+        r"academic\s+background",
+    ],
+    "projects": [
+        r"projects?",
+        r"(?:key|selected|personal|academic|major|notable|mini|top)\s+projects?",
+        r"projects?\s*(?:&|and|with|,)\s*(?:achievements?|hackathons?|internships?|experience)",
+    ],
+    "skills": [
+        r"technical\s+skills",
+        r"skills?(?:\s*(?:&|and)\s*(?:tools?|technologies?))?",
+        r"technologies",
+        r"tech\s+stack",
+        r"skills?\s+summary",
+    ],
+    "certifications": [
+        r"certifications?(?:\s*(?:&|and)\s*(?:courses?|licenses?|training))?",
+        r"licenses?",
+        r"courses?",
+    ],
+    "achievements": [
+        r"achievements?",
+        r"awards?",
+        r"honors?|honours?",
+        r"accomplishments?",
+        r"extra[\s-]?curricular(?:\s*(?:&|and)\s*(?:awards?|achievements?))?",
+        r"(?:awards?|achievements?|hackathons?)\s*(?:&|and)\s*(?:awards?|achievements?|hackathons?)",
+    ],
+    "summary": [
+        r"summary",
+        r"objective",
+        r"career\s+objective",
+        r"profile",
+        r"about\s+me",
+    ],
 }
 
 

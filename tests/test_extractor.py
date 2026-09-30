@@ -1,4 +1,4 @@
-"""Tests: extraction quality — resume profiles + job requirements."""
+"""Tests: extraction quality - resume profiles + job requirements."""
 
 from app.services.extractor import (
     extract_job,
@@ -148,3 +148,30 @@ Software Engineer | PayU
 """
         p = extract_resume(resume)
         assert p["total_years_experience"] == 2.0
+
+
+class TestSectionVariants:
+    """Real-world resumes use heading variants - none may be silently dropped."""
+
+    VARIANTS = {
+        "Key Projects": "projects",
+        "KEY PROJECTS": "projects",
+        "Projects & Hackathons": "projects",
+        "Selected Projects": "projects",
+        "Major Projects": "projects",
+        "SKILLS & TOOLS": "skills",
+        "AWARDS & HACKATHONS": "achievements",
+        "CERTIFICATIONS & COURSES": "certifications",
+        "Experience & Projects": "experience",
+        "Internships": "experience",
+    }
+
+    def test_heading_variants_detected(self):
+        from app.services.extractor import _split_sections
+
+        for heading, expected in self.VARIANTS.items():
+            text = f"Name\nemail@x.com\n\n{heading}\nSome real content about things\n"
+            sections = _split_sections(text)
+            assert expected in sections and "Some real content" in sections[expected], (
+                f"heading '{heading}' not detected as '{expected}': got {list(sections.keys())}"
+            )
