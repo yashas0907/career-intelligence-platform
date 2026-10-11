@@ -1,21 +1,21 @@
-"""Semantic matching + scoring engine (fully deterministic).
+﻿"""Semantic matching + scoring engine (fully deterministic).
 
 Scoring methodology (documented in docs/scoring.md, verified by tests)
 ---------------------------------------------------------------------
 Overall = weighted mix of Skills (0.35) / Experience (0.20) / Projects (0.15) /
-Education (0.10) / Semantic (0.20) — WITH DYNAMIC WEIGHT REDISTRIBUTION:
+Education (0.10) / Semantic (0.20) â€” WITH DYNAMIC WEIGHT REDISTRIBUTION:
 
-* Every component reports `informative` — False when it had to fall back to a
+* Every component reports `informative` â€” False when it had to fall back to a
   neutral default because the job description lacks that signal entirely
   (e.g. a watchman posting with no recognizable skill requirements).
 * Weight from non-informative components is REDISTRIBUTED to the informative
   ones (renormalized). A skill-sparse JD is therefore scored mainly on
-  semantic/project relevance instead of collecting free neutral credit —
+  semantic/project relevance instead of collecting free neutral credit â€”
   a tech resume vs watchman lands ~15-25%, a real ML role stays ~70%.
 * When ALL components are informative the weights are exactly the base weights.
 
 Integrity rules (the "watchman bug" fixes, all test-verified):
-* No-requirement JDs NEVER get free 100% on skills — neutral 0.5 max, and the
+* No-requirement JDs NEVER get free 100% on skills â€” neutral 0.5 max, and the
   component is marked non-informative.
 * The hashing backend filters ~120 English stopwords so unrelated documents
   don't inherit cosine from generic words.
@@ -31,7 +31,7 @@ from typing import Any
 import numpy as np
 
 from app.services.ai.embeddings import get_backend, semantic_similarity
-from app.services.skills import infer_role_skills, normalizer, related_skills, skill_category, skill_display
+from app.services.skills import infer_role_skill_groups, normalizer, related_skills, skill_category, skill_display
 
 logger = logging.getLogger("app.scoring")
 
@@ -45,7 +45,7 @@ WEIGHTS = {
 REQUIRED_WEIGHT = 3.0
 PREFERRED_WEIGHT = 1.0
 TRANSFERABLE_CREDIT = 0.6
-# Role-inferred requirements are lower confidence than explicitly stated ones —
+# Role-inferred requirements are lower confidence than explicitly stated ones â€”
 # the skills score is capped by this factor when inferred from the role title.
 ROLE_INFERRED_CONFIDENCE = 0.85
 # JD text below these lengths carries no reliable document-level signal
@@ -120,10 +120,11 @@ def compare_skills(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
     cand = _candidate_skills(profile)
     required, preferred = _job_skills(parsed_jd)
     skills_source = "bullets"
+    required_groups: list[tuple[str, ...]] = []  # only for role_inferred
 
     # Sparse-JD fallback: when bullet extraction found NO skill requirements,
     # scan the whole JD text for non-soft taxonomy skills and score against
-    # those (honest overlap). Soft skills alone never count — a resume that
+    # those (honest overlap). Soft skills alone never count â€” a resume that
     # lists "communication" must not earn a 100% skills score off a watchman JD.
     if not required and not preferred:
         jd_is_tiny = len((jd_text or "").strip()) < TINY_JD_CHARS
@@ -137,15 +138,16 @@ def compare_skills(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
 
         if not required and not preferred:
             # Thin JD (a role title / one-liner): the signal lives in the ROLE
-            # TITLE. "web developer" implies a web skill set — infer it and
-            # score against it (confidence-capped) instead of neutral filler.
+            # TITLE. "web developer" implies a web skill set â€” infer the skill
+            # GROUPS ("PyTorch or TensorFlow" style) and score against them
+            # (confidence-capped) instead of neutral filler.
             role_text = f"{parsed_jd.get('title') or ''} {jd_text or ''}"
-            inferred = infer_role_skills(role_text)
+            inferred = infer_role_skill_groups(role_text)
             if inferred:
-                required = inferred
+                required_groups = inferred
                 skills_source = "role_inferred"
 
-    if not required and not preferred:
+    if not required and not preferred and not required_groups:
         return {
             "score": 0.5,
             "informative": False,
@@ -155,11 +157,11 @@ def compare_skills(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
             "transferable": [],
             "missing_required": [],
             "missing_preferred": [],
-            "note": "No recognizable skill requirements in this job description — neutral skills credit; the match relies on overall relevance.",
+            "note": "No recognizable skill requirements in this job description â€” neutral skills credit; the match relies on overall relevance.",
         }
 
     # Both inferred sources are lower-confidence than explicitly stated
-    # requirement bullets — the skills score is capped for either.
+    # requirement bullets â€” the skills score is capped for either.
     inferred_based = skills_source in {"role_inferred", "full_text"}
 
     details: list[SkillMatchDetail] = []
@@ -168,39 +170,86 @@ def compare_skills(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
     missing_required: list[SkillMatchDetail] = []
     missing_preferred: list[SkillMatchDetail] = []
 
-    for skill, weight_kind in [(s, "required") for s in required] + [(s, "preferred") for s in preferred]:
-        detail = SkillMatchDetail(
-            skill=skill,
-            display=skill_display(skill),
-            category=skill_category(skill),
-            requirement=weight_kind,
-            status="missing",
-            score=0.0,
-        )
-        if skill in cand:
-            ev = cand[skill].get("evidence") or []
-            detail.status = "exact"
-            detail.score = 1.0
-            detail.evidence = [f"Found in resume: “{ev[0]}”"] if ev else ["Detected in resume text"]
-            strong.append(detail)
-        else:
-            # transferable via relatedness
-            rel = related_skills(skill)
-            hits = sorted(rel & set(cand.keys()))
-            if hits:
-                via = hits[0]
-                detail.status = "transferable"
-                detail.score = TRANSFERABLE_CREDIT * CATEGORY_PENALTY_BONUS.get(detail.category, 0.8)
+    if skills_source == "role_inferred":
+        # GROUP-based scoring: each group is satisfied when the resume has ANY
+        # member ("PyTorch or TensorFlow"). Related-skill partial credit applies.
+        for group in required_groups:
+            rep = group[0]
+            detail = SkillMatchDetail(
+                skill=rep,
+                display=skill_display(rep),
+                category=skill_category(rep),
+                requirement="required",
+                status="missing",
+                score=0.0,
+            )
+            members_in = [m for m in group if m in cand]
+            if members_in:
+                via = members_in[0]
+                detail.status = "exact"
+                detail.score = 1.0
                 detail.via = via
+                alt = " / ".join(skill_display(m) for m in group)
                 detail.evidence = [
-                    f"No direct “{skill_display(skill)}”, but has related “{skill_display(via)}” (partial credit {detail.score:.0%})"
+                    f"Role expects {alt} â€” matched via {skill_display(via)} in resume"
                 ]
-                transferable.append(detail)
+                strong.append(detail)
             else:
-                ev = [f"“{skill_display(skill)}” ({detail.requirement}) not found in resume"]
-                detail.evidence = ev
-                (missing_required if weight_kind == "required" else missing_preferred).append(detail)
-        details.append(detail)
+                rel_hit = None
+                for m in group:
+                    for r in sorted(related_skills(m)):
+                        if r in cand:
+                            rel_hit = r
+                            break
+                    if rel_hit:
+                        break
+                if rel_hit:
+                    detail.status = "transferable"
+                    detail.score = TRANSFERABLE_CREDIT * CATEGORY_PENALTY_BONUS.get(detail.category, 0.8)
+                    detail.via = rel_hit
+                    detail.evidence = [
+                        f"Role expects {skill_display(rep)} â€” has related â€œ{skill_display(rel_hit)}â€ (partial credit {detail.score:.0%})"
+                    ]
+                    transferable.append(detail)
+                else:
+                    alt = " / ".join(skill_display(m) for m in group)
+                    detail.evidence = [f"Role expects {alt} â€” none found in resume"]
+                    missing_required.append(detail)
+            details.append(detail)
+    else:
+        for skill, weight_kind in [(s, "required") for s in required] + [(s, "preferred") for s in preferred]:
+            detail = SkillMatchDetail(
+                skill=skill,
+                display=skill_display(skill),
+                category=skill_category(skill),
+                requirement=weight_kind,
+                status="missing",
+                score=0.0,
+            )
+            if skill in cand:
+                ev = cand[skill].get("evidence") or []
+                detail.status = "exact"
+                detail.score = 1.0
+                detail.evidence = [f"Found in resume: â€œ{ev[0]}â€"] if ev else ["Detected in resume text"]
+                strong.append(detail)
+            else:
+                # transferable via relatedness
+                rel = related_skills(skill)
+                hits = sorted(rel & set(cand.keys()))
+                if hits:
+                    via = hits[0]
+                    detail.status = "transferable"
+                    detail.score = TRANSFERABLE_CREDIT * CATEGORY_PENALTY_BONUS.get(detail.category, 0.8)
+                    detail.via = via
+                    detail.evidence = [
+                        f"No direct â€œ{skill_display(skill)}â€, but has related â€œ{skill_display(via)}â€ (partial credit {detail.score:.0%})"
+                    ]
+                    transferable.append(detail)
+                else:
+                    ev = [f"â€œ{skill_display(skill)}â€ ({detail.requirement}) not found in resume"]
+                    detail.evidence = ev
+                    (missing_required if weight_kind == "required" else missing_preferred).append(detail)
+            details.append(detail)
 
     # weighted skills score
     total_weight = 0.0
@@ -226,7 +275,7 @@ def compare_skills(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
         "missing_required": [d.__dict__ for d in missing_required],
         "missing_preferred": [d.__dict__ for d in missing_preferred],
         "note": (
-            "Skill requirements inferred from the role title — the job description had no explicit requirement list."
+            "Skill requirements inferred from the role title â€” the job description had no explicit requirement list."
             if skills_source == "role_inferred"
             else ""
         ),
@@ -241,13 +290,13 @@ def _score_years(profile: dict[str, Any], parsed_jd: dict[str, Any]) -> tuple[fl
     req = parsed_jd.get("min_years_experience")
     have = profile.get("total_years_experience")
     if not req:
-        return 0.5, ["No explicit experience requirement — neutral credit (50%)"]
+        return 0.5, ["No explicit experience requirement â€” neutral credit (50%)"]
     if have is None:
         return 0.4, [f"Job requires ~{req:g} yrs; resume experience length could not be determined (40%)"]
     if have >= req:
-        return 1.0, [f"Experience: {have:g} yrs detected vs {req:g} required — satisfied"]
+        return 1.0, [f"Experience: {have:g} yrs detected vs {req:g} required â€” satisfied"]
     ratio = max(0.0, have / max(req, 0.1))
-    return ratio, [f"Experience: {have:g} yrs detected vs {req:g} required — partial ({ratio:.0%})"]
+    return ratio, [f"Experience: {have:g} yrs detected vs {req:g} required â€” partial ({ratio:.0%})"]
 
 
 def score_experience(profile: dict[str, Any], parsed_jd: dict[str, Any], resume_text: str) -> dict[str, Any]:
@@ -259,7 +308,7 @@ def score_experience(profile: dict[str, Any], parsed_jd: dict[str, Any], resume_
     informative = req is not None or has_resp
     resp_text = " ".join(parsed_jd.get("responsibilities") or []) or parsed_jd.get("title") or ""
     exp_text = _experience_text(profile) or resume_text[:1500]
-    # exp↔resp is a short-text comparison — same calibrated anchors as projects
+    # expâ†”resp is a short-text comparison â€” same calibrated anchors as projects
     # (raw cosine on the hashing backend runs low even for related pairs)
     if resp_text:
         raw_sem = semantic_similarity(exp_text, resp_text)
@@ -273,7 +322,7 @@ def score_experience(profile: dict[str, Any], parsed_jd: dict[str, Any], resume_
         "informative": informative,
         "years": round(years_score, 4),
         "semantic": round(sem, 4),
-        "evidence": years_ev + [f"Experience↔responsibilities relevance: {sem:.0%}"],
+        "evidence": years_ev + [f"Experienceâ†”responsibilities relevance: {sem:.0%}"],
     }
 
 
@@ -282,7 +331,7 @@ def score_experience(profile: dict[str, Any], parsed_jd: dict[str, Any], resume_
 # ---------------------------------------------------------------------------
 
 def _short_text_anchors() -> tuple[float, float]:
-    """Anchors for SHORT-text cosine (project ↔ JD bullets).
+    """Anchors for SHORT-text cosine (project â†” JD bullets).
 
     Calibrated on labeled pairs (docs/scoring.md): related ~0.08-0.12 raw,
     unrelated ~0.04-0.10 raw on the hashing backend. The lexical cosine is
@@ -299,16 +348,16 @@ def score_projects(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
     projects = _project_texts(profile)
     if not projects:
         # A real signal for early-career candidates (not a neutral default)
-        return {"score": 0.15, "informative": True, "evidence": ["No projects section detected — low default credit"]}
+        return {"score": 0.15, "informative": True, "evidence": ["No projects section detected â€” low default credit"]}
     req_text = " ".join(parsed_jd.get("required_bullets") or [])
     if not req_text:
         req_text = jd_text or ""  # sparse JD: compare against the whole job text
     if not req_text or len(req_text.strip()) < TINY_REQ_CHARS:
-        # nothing (or a one-liner) to compare projects against — no signal
+        # nothing (or a one-liner) to compare projects against â€” no signal
         return {
             "score": 0.4,
             "informative": False,
-            "evidence": ["Job description too short to compare projects against — neutral credit"],
+            "evidence": ["Job description too short to compare projects against â€” neutral credit"],
         }
 
     lo, hi = _short_text_anchors()
@@ -318,7 +367,7 @@ def score_projects(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
     req_vec = backend.embed([req_text])[0]
     proj_vecs = proj_vecs / (np_norm(proj_vecs, axis=1, keepdims=True) + 1e-9)
     req_vec = req_vec / (np_norm(req_vec) + 1e-9)
-    # raw cosine clamped to [0,1] — no (cos+1)/2 remap: the hashing backend's
+    # raw cosine clamped to [0,1] â€” no (cos+1)/2 remap: the hashing backend's
     # non-negative vectors would be silently inflated by it
     sims = np.clip(proj_vecs @ req_vec, 0.0, 1.0)
     best_idx = int(sims.argmax())
@@ -346,8 +395,8 @@ def score_projects(profile: dict[str, Any], parsed_jd: dict[str, Any], jd_text: 
         "best_similarity": round(float(sims[best_idx]), 4),
         "skill_coverage": round(cover, 4),
         "evidence": [
-            f"Best-matching project: “{projects[best_idx][:80]}…” ({best:.0%} calibrated similarity)",
-            f"Required skills appearing inside projects: {cover:.0%}" if req_skills else "No recognizable skill requirements — scored on relevance",
+            f"Best-matching project: â€œ{projects[best_idx][:80]}â€¦â€ ({best:.0%} calibrated similarity)",
+            f"Required skills appearing inside projects: {cover:.0%}" if req_skills else "No recognizable skill requirements â€” scored on relevance",
         ],
     }
 
@@ -386,18 +435,18 @@ def score_education(profile: dict[str, Any], parsed_jd: dict[str, Any]) -> dict[
 
     if not reqs:
         # no requirement -> neutral, non-informative
-        return {"score": 0.7, "informative": False, "evidence": ["No education requirement stated — neutral credit (70%)"]}
+        return {"score": 0.7, "informative": False, "evidence": ["No education requirement stated â€” neutral credit (70%)"]}
 
     req_level = max((_DEGREE_LEVELS.get(r.lower(), 0) for r in reqs), default=0)
     cand_level = _max_degree_level(cand_texts)
 
     if req_level == 0:
         # requirement exists but names no recognizable degree (e.g. "8th pass",
-        # "any graduate") — meaningless for differentiation -> neutral
+        # "any graduate") â€” meaningless for differentiation -> neutral
         return {
             "score": 0.7,
             "informative": False,
-            "evidence": ["Education requirement doesn't specify a degree level — neutral credit (70%)"],
+            "evidence": ["Education requirement doesn't specify a degree level â€” neutral credit (70%)"],
         }
 
     if cand_level >= req_level:
@@ -411,7 +460,7 @@ def score_education(profile: dict[str, Any], parsed_jd: dict[str, Any]) -> dict[
         return {
             "score": round(ratio, 4),
             "informative": True,
-            "evidence": [f"Candidate degree level ({cand_level}) below required ({req_level}) — partial"],
+            "evidence": [f"Candidate degree level ({cand_level}) below required ({req_level}) â€” partial"],
         }
     return {
         "score": 0.3,
@@ -427,7 +476,7 @@ def score_education(profile: dict[str, Any], parsed_jd: dict[str, Any]) -> dict[
 def _semantic_anchors() -> tuple[float, float]:
     """Linear-map anchors (lo, hi) for stretching raw doc-level cosine to [0,1].
 
-    Calibrated per backend on labeled resume↔JD pairs (see docs/scoring.md):
+    Calibrated per backend on labeled resumeâ†”JD pairs (see docs/scoring.md):
     - hashing: stopword-filtered lexical cosine; unrelated ~0.08-0.21,
       related ~0.22-0.45 -> anchors chosen to separate them honestly.
     - true embedding models (ST/OpenAI): different cosine distribution.
@@ -440,13 +489,13 @@ def _semantic_anchors() -> tuple[float, float]:
 
 def score_semantic(resume_text: str, parsed_jd: dict[str, Any], jd_text: str) -> dict[str, Any]:
     # A tiny JD (one-liner like "web developer") can't carry document-level
-    # signal — cosine vs any resume is ~0. Neutral, non-informative.
+    # signal â€” cosine vs any resume is ~0. Neutral, non-informative.
     if len((jd_text or "").strip()) < TINY_JD_CHARS:
         return {
             "score": 0.3,
             "informative": False,
             "raw_similarity": round(semantic_similarity(resume_text, jd_text or " "), 4),
-            "evidence": ["Job description too short for reliable document-level relevance — neutral credit"],
+            "evidence": ["Job description too short for reliable document-level relevance â€” neutral credit"],
         }
     sim = semantic_similarity(resume_text, jd_text)
     lo, hi = _semantic_anchors()
@@ -474,7 +523,7 @@ def analyze_match(profile: dict[str, Any], resume_text: str, parsed_jd: dict[str
 
     # --- Dynamic weight redistribution ---
     # Components that fell back to neutral defaults (JD lacks that signal) carry
-    # no information — their weight is redistributed to the informative ones.
+    # no information â€” their weight is redistributed to the informative ones.
     # A skill-sparse JD ("watchman") is thus scored on relevance only, while a
     # fully-specified JD keeps the exact base weights.
     informative = {k: components[k].get("informative", True) for k in WEIGHTS}
@@ -483,7 +532,7 @@ def analyze_match(profile: dict[str, Any], resume_text: str, parsed_jd: dict[str
     if total_eff > 0:
         effective = {k: w / total_eff for k, w in effective.items()}
     elif all(not v for v in informative.values()):
-        # NOTHING in the JD carried signal — averaging neutral defaults would
+        # NOTHING in the JD carried signal â€” averaging neutral defaults would
         # fabricate a ~48%; the honest answer is a flat low score with a note.
         overall_flat = 0.3
         return {
@@ -493,8 +542,8 @@ def analyze_match(profile: dict[str, Any], resume_text: str, parsed_jd: dict[str
             "base_weights": WEIGHTS,
             "weights_redistributed": True,
             "components": components,
-            "note": "This job description has no usable signal (no requirements, too short) — the score is a flat low default.",
-            "methodology": "See docs/scoring.md — weighted deterministic components with dynamic redistribution for sparse JDs; no LLM involvement in scoring.",
+            "note": "This job description has no usable signal (no requirements, too short) â€” the score is a flat low default.",
+            "methodology": "See docs/scoring.md â€” weighted deterministic components with dynamic redistribution for sparse JDs; no LLM involvement in scoring.",
         }
     else:  # unreachable safety net
         effective = dict(WEIGHTS)
@@ -509,5 +558,6 @@ def analyze_match(profile: dict[str, Any], resume_text: str, parsed_jd: dict[str
         "base_weights": WEIGHTS,
         "weights_redistributed": redistributed,
         "components": components,
-        "methodology": "See docs/scoring.md — weighted deterministic components with dynamic redistribution for sparse JDs; no LLM involvement in scoring.",
+        "methodology": "See docs/scoring.md â€” weighted deterministic components with dynamic redistribution for sparse JDs; no LLM involvement in scoring.",
     }
+

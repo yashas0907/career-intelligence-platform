@@ -25,7 +25,7 @@ This project demonstrates an actual AI/ML **system**:
 - a multi-signal, weighted scoring engine with published methodology
 - embedding-backed semantic similarity with a pluggable backend chain
 - a grounded RAG assistant with citations and an extractive offline fallback
-- a relational database, typed API, structured logging, Docker, and 162 tests
+- a relational database, typed API, structured logging, Docker, and 164 tests
 
 Every component was designed and built from scratch around one core principle:
 **explainability and deterministic scoring over a single opaque LLM call.**
@@ -159,11 +159,11 @@ See [.env.example](.env.example) â€” highlights:
 
 ```bash
 pip install -r backend/requirements.txt
-python -m pytest tests -v              # 162 tests
+python -m pytest tests -v              # 164 tests
 python tests/eval_extraction.py        # labeled-corpus P/R/F1 report
 ```
 
-- **162 tests**: scoring methodology contract, skill normalization, parsing (real
+- **164 tests**: scoring methodology contract, skill normalization, parsing (real
   generated PDF/DOCX bytes, malformed files), extraction, ATS, ranking, RAG
   retrieval, API lifecycle + edge cases, embedding stability, SSE streaming
   (chat + analysis), demo seeding, rate limiting.
@@ -209,6 +209,8 @@ Summarized from [docs/evaluation.md](docs/evaluation.md):
 ## License
 
 MIT â€” see [LICENSE](LICENSE).
+
+
 
 
 

@@ -218,3 +218,59 @@ class TestWatchmanAPI:
         assert w["weights_redistributed"] is True
         assert m["weights_redistributed"] is False
         assert "No recognizable skill requirements" in w["explanation"]
+
+
+class TestRoleInferenceSweep:
+    """The full role matrix: every resume peaks in its own field, adjacent
+    fields are middle, unrelated fields low. Longest-keyword-wins matching."""
+
+    RESUMES = {
+        "cyber_student": """Rohit Nair
+rohit.nair@email.com
+
+SKILLS
+Security: Penetration testing, Wireshark, Burp Suite, Nmap
+Systems: Linux (Kali), Bash, Python
+Concepts: Computer Networks, Cryptography, Web security
+
+PROJECTS
+- Network Vulnerability Scanner. Built a Python port scanner with service fingerprinting and CVE lookup
+""",
+        "webdev": """Bhuvan Bapat
+bhuvanbapat@gmail.com
+
+SKILLS
+Languages: JavaScript, TypeScript, Python, HTML, CSS, SQL
+Frameworks: Express, FastAPI, Node.js, React
+Tools: Git, Linux
+Databases: MongoDB
+
+PROJECTS
+- Portfolio Website. Designed a responsive personal portfolio using React and TypeScript
+""",
+    }
+
+    def test_longest_keyword_wins(self):
+        """'cybersecurity analyst' must infer the CYBER skill set, not the
+        generic 'analyst' (data analyst) set."""
+        from app.services.skills import infer_role_skill_groups
+
+        groups = infer_role_skill_groups("cybersecurity analyst")
+        members = {m for g in groups for m in g}
+        assert "cybersecurity" in members, f"cyber groups hijacked: {members}"
+        assert "sql" not in members and "powerbi" not in members
+
+    def test_cyber_resume_peaks_in_own_field(self):
+        from app.services.extractor import extract_job, extract_resume
+        from app.services.matching.scoring import analyze_match
+
+        profile = extract_resume(self.RESUMES["cyber_student"])
+        roles = ["cybersecurity analyst", "data analyst", "web developer", "watchman"]
+        scores = {}
+        for role in roles:
+            jd = extract_job(role)
+            jd["title"] = role
+            scores[role] = analyze_match(profile, self.RESUMES["cyber_student"], jd, role)["overall_score"]
+        assert scores["cybersecurity analyst"] > 0.5, f"own field: {scores['cybersecurity analyst']:.0%}"
+        assert scores["cybersecurity analyst"] > scores["watchman"] + 0.2
+        assert scores["cybersecurity analyst"] > scores["data analyst"] + 0.2

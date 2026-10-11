@@ -252,51 +252,64 @@ normalizer = SkillNormalizer()
 # ---------------------------------------------------------------------------
 # Role-skill inference: thin JDs ("web developer", "i wanna work in AI")
 # carry their signal in the ROLE TITLE, not in requirement bullets.
-# A "web developer" title implies a web skill set — this curated table maps
-# role keywords to expected taxonomy skills so thin JDs match honestly
-# instead of collapsing to neutral filler.
+# Each role maps to a list of SKILL GROUPS — a group is satisfied when the
+# resume has ANY member ("PyTorch or TensorFlow" style). Scoring against
+# groups means a React dev with js/html/css/react covers the core frontend
+# role instead of being punished for missing Vue/Angular.
 # Order matters: most specific role patterns first, generic last.
 # Soft skills excluded everywhere (consistent with JD extraction).
 # ---------------------------------------------------------------------------
 
-_ROLE_SKILL_SETS: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
+_ROLE_SKILL_SETS: list[tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = [
     (("frontend developer", "frontend engineer", "ui developer", "ui engineer", "frontend"),
-     ("javascript", "typescript", "html", "css", "react", "vue", "angular", "rest-api")),
+     (("javascript", "typescript"), ("html",), ("css",), ("react", "vue", "angular"), ("git",), ("rest-api", "graphql"))),
     (("backend developer", "backend engineer", "api developer", "backend"),
-     ("python", "java", "nodejs", "sql", "rest-api", "docker", "postgresql", "mongodb", "redis", "linux")),
+     (("python", "java", "nodejs", "go", "csharp"), ("sql", "postgresql", "mysql", "mongodb"),
+      ("rest-api", "graphql"), ("docker",), ("linux",), ("git",))),
     (("full stack", "fullstack", "full-stack", "web developer", "web development", "web dev"),
-     ("javascript", "typescript", "html", "css", "react", "nodejs", "rest-api", "sql", "git", "mongodb")),
+     (("javascript", "typescript"), ("html",), ("css",), ("react", "vue", "angular", "nextjs"),
+      ("nodejs", "python", "java"), ("sql", "mongodb"), ("git",), ("rest-api",))),
     (("data analyst", "data analytics", "business analyst", "analyst"),
-     ("sql", "python", "excel", "pandas", "statistics", "data-visualization", "powerbi", "tableau")),
+     (("sql",), ("python", "excel"), ("pandas", "excel"), ("statistics",),
+      ("powerbi", "tableau"), ("data-visualization",))),
     (("data scientist", "data science"),
-     ("python", "sql", "pandas", "numpy", "scikit-learn", "machine-learning", "statistics", "data-visualization")),
-    (("machine learning engineer", "ml engineer", "machine learning intern", "ml intern", "ai engineer", "machine learning", "deep learning"),
-     ("python", "pytorch", "tensorflow", "scikit-learn", "machine-learning", "deep-learning", "pandas", "numpy", "mlops")),
+     (("python",), ("sql",), ("pandas", "numpy"), ("scikit-learn", "tensorflow", "pytorch"),
+      ("machine-learning",), ("statistics",), ("data-visualization",))),
+    (("machine learning engineer", "ml engineer", "machine learning intern", "ml intern", "machine learning", "deep learning"),
+     (("python",), ("pytorch", "tensorflow"), ("scikit-learn",), ("machine-learning", "deep-learning"),
+      ("pandas", "numpy"), ("docker", "mlops"), ("sql",))),
     (("cyber security", "cybersecurity", "security analyst", "security engineer", "infosec", "penetration tester"),
-     ("cybersecurity", "linux", "python", "bash", "networking", "docker", "aws")),
+     (("cybersecurity",), ("linux",), ("python", "bash"), ("networking",), ("docker", "aws"))),
     (("devops engineer", "devops", "site reliability", "sre"),
-     ("docker", "kubernetes", "jenkins", "terraform", "linux", "aws", "bash")),
-    (("mobile app", "android developer", "ios developer", "app developer"),
-     ("kotlin", "swift", "java", "react", "rest-api")),
-    (("ai", "artificial intelligence", "genai", "generative ai"),
-     ("python", "llm", "rag", "prompt-engineering", "embeddings", "machine-learning", "deep-learning")),
+     (("docker",), ("kubernetes",), ("jenkins", "terraform"), ("linux",), ("aws", "azure", "gcp"), ("bash",))),
+    (("mobile app", "android developer", "ios developer", "app developer", "flutter developer"),
+     (("kotlin", "swift", "dart"), ("java", "javascript"), ("git",), ("rest-api", "graphql"))),
+    (("ai engineer", "genai", "generative ai", "artificial intelligence"),
+     (("python",), ("llm", "rag", "prompt-engineering"), ("embeddings", "vector-db"),
+      ("machine-learning", "deep-learning"), ("pytorch", "tensorflow"))),
     (("software engineer", "software developer", "sde", "developer", "programmer"),
-     ("python", "java", "javascript", "sql", "git", "docker", "rest-api")),
+     (("python", "java", "javascript", "csharp", "cpp", "go", "rust"), ("sql", "mongodb", "postgresql"),
+      ("git",), ("docker", "kubernetes"), ("rest-api", "graphql"))),
 ]
 
 
-def infer_role_skills(text: str) -> list[str]:
-    """Infer the expected skill set from a role title / thin JD text.
+def infer_role_skill_groups(text: str) -> list[tuple[str, ...]]:
+    """Infer the expected SKILL GROUPS from a role title / thin JD text.
 
     Word-boundary matching ("maintenance" must not trigger the generic "ai"
-    pattern). Returns taxonomy skill ids for the FIRST (most specific) matching
-    role pattern, or [] when no role pattern matches.
+    pattern). LONGEST keyword wins: "cybersecurity analyst" matches both the
+    generic "analyst" (data analyst) and the specific "cybersecurity" (cyber)
+    — the longer, more specific keyword must take precedence or a cyber
+    resume gets scored against a data-analyst skill set. Returns skill groups
+    for the winning role, or [] when no role pattern matches.
     """
     if not text:
         return []
     lowered = text.lower()
-    for keywords, skills in _ROLE_SKILL_SETS:
+    best: tuple[int, list[tuple[str, ...]]] | None = None
+    for keywords, groups in _ROLE_SKILL_SETS:
         for kw in keywords:
             if re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", lowered):
-                return list(skills)
-    return []
+                if best is None or len(kw) > best[0]:
+                    best = (len(kw), groups)
+    return list(best[1]) if best else []
