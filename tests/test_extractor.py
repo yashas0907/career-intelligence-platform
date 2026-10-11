@@ -175,3 +175,56 @@ class TestSectionVariants:
             assert expected in sections and "Some real content" in sections[expected], (
                 f"heading '{heading}' not detected as '{expected}': got {list(sections.keys())}"
             )
+
+
+class TestBulletFormatFallbacks:
+    """Real resumes often use '- Name. Description' bullets with no header
+    lines - the deterministic extractor must not silently lose them."""
+
+    def test_projects_as_bullets_extracted(self):
+        resume = """Dev One
+dev@x.com
+
+PROJECTS
+- Smart Sewer Monitoring Prototype. Engineered an IoT safety prototype (ESP8266, ultrasonic) with live dashboard
+- Portfolio Website. Designed a responsive personal portfolio using React and TypeScript
+"""
+        p = extract_resume(resume)
+        names = [proj["name"] for proj in p["projects"]]
+        assert "Smart Sewer Monitoring Prototype" in names
+        assert "Portfolio Website" in names
+        for proj in p["projects"]:
+            assert proj.get("description"), f"empty description for {proj.get('name')}"
+
+    def test_experience_as_bullets_extracted(self):
+        resume = """Dev One
+dev@x.com
+
+EXPERIENCE
+- Software Engineer at PayU. Built REST APIs with Python serving 10k requests/day
+- ML Intern at TraceAI. Developed churn models with scikit-learn improving recall 12%
+"""
+        p = extract_resume(resume)
+        titles = [e.get("title") for e in p["experience"]]
+        assert "Software Engineer" in titles
+        assert "ML Intern" in titles
+        for e in p["experience"]:
+            assert e.get("company") in ("PayU", "TraceAI")
+            assert e.get("bullets"), f"empty bullets for {e.get('title')}"
+
+    def test_header_format_still_works(self):
+        resume = """Dev One
+dev@x.com
+
+EXPERIENCE
+Software Engineer | PayU
+2022 - 2024
+- Built APIs with Python
+
+PROJECTS
+Cool Project
+- Built a thing with Docker
+"""
+        p = extract_resume(resume)
+        assert any(e.get("title") == "Software Engineer" for e in p["experience"])
+        assert any(proj.get("name") == "Cool Project" for proj in p["projects"])

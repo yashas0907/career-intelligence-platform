@@ -303,6 +303,30 @@ def _extract_experience(sections: dict[str, str]) -> list[dict[str, Any]]:
                 current.setdefault("bullets", []).append(content)
 
     flush()
+
+    if not out:
+        # Bullet-per-role format: "- Software Engineer at PayU. Built REST APIs
+        # with Python" — every line is a bullet with the role header inline.
+        # The state machine finds nothing here; parse each bullet as one role
+        # entry instead of silently losing them all.
+        for line in text.splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            b = _BULLET_RE.match(line)
+            content = (b.group(1) if b else s).strip()
+            if not content or len(content) < 15:
+                continue
+            head, _, desc = content.partition(". ")
+            title, company = _split_title_company(head)
+            entry: dict[str, Any] = {"title": title, "company": company}
+            dm = _DATE_RE.search(head) or _DATE_PRESENT_RE.search(head)
+            if dm:
+                entry["date_range"] = dm.group(0).strip()
+            if desc.strip():
+                entry["bullets"] = [desc.strip()]
+            if entry.get("title"):
+                out.append(entry)
     return out
 
 
@@ -331,6 +355,25 @@ def _extract_projects(sections: dict[str, str]) -> list[dict[str, Any]]:
             current["description"].append((b.group(1) if b else s).strip())
     if current:
         out.append(current)
+
+    if not out:
+        # Bullet-per-project format: "- Smart Sewer Prototype. Engineered an IoT
+        # safety prototype (...)" — every line is a bullet with the project name
+        # inline. The header-based pass finds nothing here; parse each bullet as
+        # one project entry instead of silently losing them all.
+        for line in text.splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            b = _BULLET_RE.match(line)
+            content = (b.group(1) if b else s).strip()
+            if not content:
+                continue
+            m = re.match(r"^(.{3,90}?)\s*[.:\u2013\u2014]\s+(.{10,})$", content)
+            if m:
+                out.append({"name": m.group(1).strip(), "description": [m.group(2).strip()]})
+            else:
+                out.append({"name": content[:90], "description": [content]})
     return out
 
 
