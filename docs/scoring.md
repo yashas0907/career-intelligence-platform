@@ -42,10 +42,15 @@ keeps the exact base weights and scores ~60%.
 
 **Thin JDs (role titles / one-liners):** when a JD has no explicit requirements, the
 expected skill set is INFERRED from the role title via a curated role-keyword table
-(`_ROLE_SKILL_SETS`: web/frontend/backend/data/ML/cyber/devops/mobile/AI roles). Title-inferred
-and full-text-scanned requirements are lower-confidence than stated ones — the skills
-score is capped by 0.85 for either. A 'web developer' one-liner vs a web-skilled resume
-therefore scores ~64% instead of collapsing to neutral filler.
+(`_ROLE_SKILL_SETS`: web/frontend/backend/data/ML/cyber/devops/mobile/AI roles).
+Inference uses **grouped alternatives** ("PyTorch or TensorFlow" style): a group is
+satisfied when the resume has ANY member — so a React dev covering js/html/css/react
+scores high on a frontend role without being punished for missing Vue/Angular.
+Matching is **longest-keyword-wins**: "cybersecurity analyst" infers the CYBER skill
+set, never the generic "analyst" (data analyst) set. Title-inferred and
+full-text-scanned requirements are lower-confidence than stated ones — the skills
+score is capped by 0.85 for either. A "web developer" one-liner vs a web-skilled
+resume with matching projects scores ~85% instead of collapsing to neutral filler.
 
 Required vs preferred skills (from JD bullet extraction; **soft skills are
 excluded entirely** â€” "good communication skills" is boilerplate in ~90% of
